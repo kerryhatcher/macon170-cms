@@ -1,0 +1,38 @@
+{
+  "name": "macon170-cms",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pack 170's isolated SonicJS content management backend",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --ip 0.0.0.0 --port 41772 --config wrangler.jsonc",
+    "deploy": "wrangler deploy --config wrangler.jsonc",
+    "deploy:dry": "wrangler deploy --dry-run --config wrangler.jsonc",
+    "db:migrate": "wrangler d1 migrations apply macon170-cms --remote --config wrangler.jsonc",
+    "db:migrate:local": "wrangler d1 migrations apply macon170-cms --local --config wrangler.jsonc",
+    "type-check": "tsc --noEmit",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "update": "npm install @sonicjs-cms/core@latest --save",
+    "update:beta": "npm install @sonicjs-cms/core@beta --save",
+    "cf:types": "wrangler types src/worker-configuration.d.ts --config wrangler.jsonc"
+  },
+  "dependencies": {
+    "@sonicjs-cms/core": "^2.19.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251202.0",
+    "@types/node": "^24.10.1",
+    "drizzle-kit": "^0.31.7",
+    "drizzle-orm": "^0.44.7",
+    "hono": "^4.10.7",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15",
+    "wrangler": "^4.52.1",
+    "zod": "^4.1.13"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

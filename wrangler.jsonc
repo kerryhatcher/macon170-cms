@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "macon170-cms",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "routes": [{ "pattern": "cms.macon170.com", "custom_domain": true }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "macon170-cms",
+      "database_id": "b3282c32-5fa3-4612-a4d2-757bcf64f67f",
+      "migrations_dir": "./node_modules/@sonicjs-cms/core/migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "MEDIA_BUCKET", "bucket_name": "macon170-cms-media" }],
+  "vars": {
+    "ENVIRONMENT": "production",
+    "CORS_ORIGINS": "https://www.macon170.com"
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": { "enabled": true, "invocation_logs": true }
+  }
+}
