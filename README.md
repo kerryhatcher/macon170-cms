@@ -98,7 +98,7 @@ The roster collection is served by SonicJS at `/api/content/leadership-roster`. 
 
 ## Continuous delivery
 
-GitHub Actions validates pull requests and deploys only pushes to `main`. Configure these repository secrets before the first automated deployment:
+GitHub Actions validates pull requests and deploys only pushes to `main`. Configure these `production` environment secrets before the first automated deployment:
 
 - `CLOUDFLARE_API_TOKEN` — deployment token for the Pack 170 Cloudflare account
 - `CLOUDFLARE_ACCOUNT_ID` — Pack 170 Cloudflare account ID

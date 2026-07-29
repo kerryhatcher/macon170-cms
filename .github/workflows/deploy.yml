@@ -26,12 +26,7 @@ jobs:
       - run: bun run type-check
       - run: bun run test
       - name: Validate Worker bundle
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
-        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy --dry-run --config wrangler.jsonc
+        run: bun run deploy:dry
 
   deploy:
     if: github.event_name != 'pull_request'
