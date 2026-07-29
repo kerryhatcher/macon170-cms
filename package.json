@@ -5,11 +5,12 @@
   "description": "Pack 170's isolated SonicJS content management backend",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --ip 0.0.0.0 --port 41772 --config wrangler.jsonc",
+    "dev": "wrangler dev --ip 0.0.0.0 --port 41772 --config wrangler.jsonc --env-file .dev.vars",
     "deploy": "wrangler deploy --config wrangler.jsonc",
     "deploy:dry": "wrangler deploy --dry-run --config wrangler.jsonc",
     "db:migrate": "wrangler d1 migrations apply macon170-cms --remote --config wrangler.jsonc",
     "db:migrate:local": "wrangler d1 migrations apply macon170-cms --local --config wrangler.jsonc",
+    "db:seed:local": "wrangler d1 execute macon170-cms --local --config wrangler.jsonc --file scripts/seed-local-roster.sql",
     "type-check": "tsc --noEmit",
     "test": "vitest --run",
     "test:watch": "vitest",

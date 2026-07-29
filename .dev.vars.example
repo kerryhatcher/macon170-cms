@@ -1,0 +1,4 @@
+# Copy this file to .dev.vars for local-only CMS development.
+ENVIRONMENT=development
+CORS_ORIGINS=http://localhost:41771,http://kudzu:41771
+JWT_SECRET=generate-a-unique-local-secret

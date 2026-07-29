@@ -36,18 +36,29 @@ Its first collection is **Volunteer leadership roster**. Each record is a role; 
    bun run db:migrate:local
    ```
 
-5. **Start the development server:**
+5. **Configure local-only environment variables:**
    ```bash
-   bun run dev
+   cp .dev.vars.example .dev.vars
    ```
 
-   Configure LAN-only browser origins in the ignored `cms/.dev.vars` file:
+   Replace `JWT_SECRET` in the ignored `.dev.vars` file with a unique local secret. The default
+   CORS origins permit the Astro dev server on this computer and the LAN hostname:
    ```dotenv
    CORS_ORIGINS=http://localhost:41771,http://kudzu:41771
    ```
    The committed Worker configuration permits only `https://www.macon170.com` in production.
 
-6. **Open your browser:**
+6. **Start the development server:**
+   ```bash
+   just run
+   ```
+
+   In a second terminal, add the current roster to the local D1 database:
+   ```bash
+   bun run db:seed:local
+   ```
+
+7. **Open your browser:**
    Navigate to `http://kudzu:41772/admin` from any computer on the LAN to access the admin interface.
 
 ## Project Structure
