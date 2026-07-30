@@ -159,6 +159,19 @@ Cloudflare secrets; ordinary deployments preserve them and do not copy either
 value into GitHub. Configure `TURNSTILE_SECRET` separately before deploying the
 contact migration.
 
+## Volunteer invitations
+
+The CMS uses SonicJS's built-in user invitation and account-acceptance flow.
+An administrator opens `/admin/users/invite`, selects the least-privileged
+role, and sends a seven-day account-setup link. The recipient creates their
+own password; public registration remains disabled.
+
+Before deploying this feature, onboard `macon170.com` to Cloudflare Email
+Service and verify `volunteers@macon170.com` as a sender. The committed
+`send_email` binding is intentionally restricted to that sender. Email
+delivery uses Cloudflare's Worker binding; do not configure the SonicJS
+Resend plugin or place a provider API key in the CMS database.
+
 The deployment smoke runner checks the calendar plus contact schema version,
 CORS/preflight, missing-token rejection, and queue login redirect. It accepts `EXPECTED_VERSION`,
 `VERSION_MAX_ATTEMPTS`, and `SMOKE_MAX_ATTEMPTS`. CI sets the expected version

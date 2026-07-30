@@ -15,6 +15,12 @@
     }
   ],
   "r2_buckets": [{ "binding": "MEDIA_BUCKET", "bucket_name": "macon170-cms-media" }],
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": ["volunteers@macon170.com"]
+    }
+  ],
   "ratelimits": [
     {
       "name": "CONTACT_RATE_LIMITER",
@@ -27,6 +33,9 @@
     "ENVIRONMENT": "production",
     "CORS_ORIGINS": "https://www.macon170.com",
     "PUBLIC_SITE_ORIGIN": "https://www.macon170.com",
+    "INVITE_FROM_EMAIL": "volunteers@macon170.com",
+    "INVITE_FROM_NAME": "Pack 170 Volunteers",
+    "INVITE_REPLY_TO": "contact@macon170.com",
     "TURNSTILE_EXPECTED_ACTION": "turnstile-spin-v2",
     "TURNSTILE_EXPECTED_HOSTNAMES": "macon170.com,www.macon170.com"
   },
