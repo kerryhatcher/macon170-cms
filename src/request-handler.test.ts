@@ -1,5 +1,5 @@
 import type { Bindings } from '@sonicjs-cms/core'
-import { AuthManager } from '@sonicjs-cms/core/middleware'
+import { AuthManager, generateCsrfToken } from '@sonicjs-cms/core/middleware'
 import { describe, expect, it, vi } from 'vitest'
 
 import { configuredCorsOrigins, createCmsRequestHandler } from '../src/request-handler'
@@ -61,6 +61,28 @@ describe('CMS request guard', () => {
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toEqual({
       error: { code: 'not_found', message: 'Not found.' },
+    })
+    expect(appFetch).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['GET', '/admin/plugins/turnstile'],
+    ['POST', '/admin/plugins/turnstile/activate'],
+    ['POST', '/admin/plugins/turnstile/settings'],
+  ])('keeps Worker-secret Turnstile outside SonicJS plugin storage: %s %s', async (method, pathname) => {
+    const appFetch = vi.fn()
+    const response = await createCmsRequestHandler(appFetch)(
+      new Request(`https://cms.example${pathname}`, { method }),
+      cmsEnv(),
+      executionContext,
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: 'managed_configuration',
+        message: 'Turnstile is managed by the Pack contact endpoint.',
+      },
     })
     expect(appFetch).not.toHaveBeenCalled()
   })
@@ -293,5 +315,168 @@ describe('CMS request guard', () => {
     await expect(mutation.json()).resolves.toEqual({
       error: { code: 'invalid_csrf', message: 'Security token rejected.' },
     })
+
+  })
+
+  it('redirects the standalone SonicJS contact renderer to the branded page', async () => {
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request('https://cms.macon170.com/forms/contact'),
+      cmsEnv(),
+      executionContext,
+    )
+
+    expect(response.status).toBe(302)
+    expect(response.headers.get('Location')).toBe(
+      'https://www.macon170.com/contact/',
+    )
+  })
+
+  it('retains the public contact schema with configured CORS', async () => {
+    const appFetch = vi.fn().mockResolvedValue(
+      Response.json({
+        id: 'default-contact-form',
+        settings: { version: 'pack-contact-v1' },
+      }),
+    )
+    const response = await createCmsRequestHandler(appFetch)(
+      new Request('https://cms.macon170.com/api/forms/contact/schema', {
+        headers: { Origin: 'https://www.macon170.com' },
+      }),
+      cmsEnv('https://www.macon170.com'),
+      executionContext,
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
+      'https://www.macon170.com',
+    )
+    expect(appFetch).toHaveBeenCalledOnce()
+  })
+
+  it('protects the contact queue with CMS admin authentication and CSRF', async () => {
+    const handleRequest = createCmsRequestHandler(vi.fn())
+    const anonymous = await handleRequest(
+      new Request(
+        'https://cms.macon170.com/admin/forms/default-contact-form/submissions',
+      ),
+      cmsEnv(),
+      executionContext,
+    )
+    expect(anonymous.status).toBe(302)
+    expect(anonymous.headers.get('Location')).toContain(
+      '/auth/login?returnTo=%2Fadmin%2Fforms%2Fdefault-contact-form%2Fsubmissions',
+    )
+
+    const adminToken = await AuthManager.generateToken(
+      'admin-1',
+      'admin@example.test',
+      'admin',
+      'test-secret-that-is-not-used-in-production',
+    )
+    const db = {
+      prepare: () => ({
+        bind() {
+          return this
+        },
+        first: async () => ({ id: 'admin-1' }),
+      }),
+    }
+    const page = await handleRequest(
+      new Request(
+        'https://cms.macon170.com/admin/forms/default-contact-form/submissions',
+        { headers: { Cookie: `auth_token=${adminToken}` } },
+      ),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+    expect(page.status).toBe(200)
+    expect(page.headers.get('Set-Cookie')).toContain('csrf_token=')
+    await expect(page.text()).resolves.toContain('Volunteer queue')
+
+    const mutation = await handleRequest(
+      new Request(
+        'https://cms.macon170.com/api/contact-admin/v1/submissions/11111111-1111-4111-8111-111111111111',
+        {
+          method: 'PATCH',
+          headers: {
+            Cookie: `auth_token=${adminToken}`,
+            Origin: 'https://cms.macon170.com',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ status: 'reviewed' }),
+        },
+      ),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+    expect(mutation.status).toBe(403)
+    await expect(mutation.json()).resolves.toEqual({
+      error: { code: 'invalid_csrf', message: 'Security token rejected.' },
+    })
+
+    const csrfToken = await generateCsrfToken(
+      'test-secret-that-is-not-used-in-production',
+    )
+    const batches: Array<Array<{ sql: string }>> = []
+    const mutationDb = {
+      prepare: (sql: string) => ({
+        sql,
+        bind() {
+          return this
+        },
+        first: async () =>
+          sql.includes('FROM users')
+            ? { id: 'admin-1' }
+            : { status: 'pending', content_id: 'content-1' },
+      }),
+      batch: async (statements: Array<{ sql: string }>) => {
+        batches.push(statements)
+        return statements.map(() => ({ success: true }))
+      },
+    }
+    const acceptedMutation = await handleRequest(
+      new Request(
+        'https://cms.macon170.com/api/contact-admin/v1/submissions/11111111-1111-4111-8111-111111111111',
+        {
+          method: 'PATCH',
+          headers: {
+            Cookie: `auth_token=${adminToken}; csrf_token=${csrfToken}`,
+            Origin: 'https://cms.macon170.com',
+            'X-CSRF-Token': csrfToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ status: 'reviewed' }),
+        },
+      ),
+      cmsEnv(undefined, mutationDb),
+      executionContext,
+    )
+    expect(acceptedMutation.status).toBe(200)
+    await expect(acceptedMutation.json()).resolves.toMatchObject({
+      status: 'reviewed',
+      statusLabel: 'In progress',
+    })
+    expect(
+      batches[0].some(({ sql }) => sql.includes('contact_submission_audit')),
+    ).toBe(true)
+  })
+
+  it('rejects a non-admin CMS user from the contact queue', async () => {
+    const token = await AuthManager.generateToken(
+      'editor-1',
+      'editor@example.test',
+      'editor',
+      'test-secret-that-is-not-used-in-production',
+    )
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request(
+        'https://cms.macon170.com/admin/forms/default-contact-form/submissions',
+        { headers: { Cookie: `auth_token=${token}` } },
+      ),
+      cmsEnv(),
+      executionContext,
+    )
+
+    expect(response.status).toBe(403)
   })
 })

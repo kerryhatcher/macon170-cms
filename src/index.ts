@@ -2,6 +2,7 @@ import { createSonicJSApp, registerCollections } from '@sonicjs-cms/core'
 import type { Bindings, SonicJSConfig } from '@sonicjs-cms/core'
 
 import leadershipRosterCollection from './collections/leadership-roster.collection'
+import { type ContactBindings, runContactRetention } from './contact'
 import { createCmsRequestHandler } from './request-handler'
 
 registerCollections([
@@ -31,5 +32,8 @@ const handleRequest = createCmsRequestHandler(app.fetch.bind(app))
 export default {
   async fetch(request: Request, env: Bindings, ctx: ExecutionContext): Promise<Response> {
     return handleRequest(request, env, ctx)
+  },
+  async scheduled(_controller: ScheduledController, env: Bindings): Promise<void> {
+    await runContactRetention(env as ContactBindings)
   },
 }

@@ -58,8 +58,8 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --config wrangler.jsonc --var APP_VERSION:${{ github.sha }}
-      - name: Wait for deployed version and verify calendar
-        run: bun run test:smoke:calendar
+      - name: Wait for deployed version and verify calendar and contact form
+        run: bun run test:smoke
         env:
           EXPECTED_VERSION: ${{ github.sha }}
       - name: Verify public roster API

@@ -21,6 +21,18 @@ import {
   updateCalendarEvent,
   validateCalendarInput,
 } from "./calendar";
+import { renderContactAdminPage } from "./contact-admin-page";
+import {
+  CONTACT_API_BASE,
+  CONTACT_QUEUE_PATH,
+  ContactRequestError,
+  type ContactBindings,
+  getContactSubmission,
+  handleContactSubmission,
+  isContactSubmissionPath,
+  listContactSubmissions,
+  updateContactSubmission,
+} from "./contact";
 import { renderLoginPage } from "./login-page";
 
 type CmsAppFetch = (
@@ -40,6 +52,7 @@ const disabledAuthPaths = new Set([
   "/auth/register",
   "/auth/register/form",
 ]);
+const managedTurnstilePluginPath = "/admin/plugins/turnstile";
 const publicCache = "public, max-age=300";
 const jsonContentType = "application/json; charset=UTF-8";
 
@@ -56,12 +69,22 @@ export function configuredCorsOrigins(env: Bindings): Set<string> {
 
 export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
   return async (request, rawEnv, ctx) => {
-    const env = rawEnv as CalendarBindings;
+    const env = rawEnv as CalendarBindings & ContactBindings;
     const url = new URL(request.url);
     const { pathname } = url;
 
     if (disabledAuthPaths.has(pathname)) {
       return errorResponse(404, "not_found", "Not found.");
+    }
+    if (
+      pathname === managedTurnstilePluginPath ||
+      pathname.startsWith(`${managedTurnstilePluginPath}/`)
+    ) {
+      return errorResponse(
+        403,
+        "managed_configuration",
+        "Turnstile is managed by the Pack contact endpoint.",
+      );
     }
     if (request.method === "GET" && pathname === "/auth/login") {
       return htmlResponse(renderLoginPage(url));
@@ -86,6 +109,49 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
 
     if (isPublicCalendarPath(pathname)) {
       return handlePublicCalendarRequest(request, env);
+    }
+
+    if (isContactSubmissionPath(pathname)) {
+      return handleContactSubmission(request, env);
+    }
+
+    if (pathname === "/forms/contact") {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return errorResponse(405, "method_not_allowed", "Method not allowed.");
+      }
+      return Response.redirect(
+        `${env.PUBLIC_SITE_ORIGIN ?? "https://www.macon170.com"}/contact/`,
+        302,
+      );
+    }
+
+    if (pathname === CONTACT_QUEUE_PATH) {
+      if (request.method !== "GET") {
+        return errorResponse(405, "method_not_allowed", "Method not allowed.");
+      }
+      const user = await authenticate(request, env);
+      if (!user) {
+        return Response.redirect(
+          `${url.origin}/auth/login?returnTo=${encodeURIComponent(CONTACT_QUEUE_PATH)}`,
+          302,
+        );
+      }
+      if (!(await hasAdminAccess(env, user))) {
+        return errorResponse(
+          403,
+          "forbidden",
+          "An active CMS administrator account is required.",
+        );
+      }
+      const csrf = await ensureCsrfToken(request, env);
+      if (csrf instanceof Response) return csrf;
+      const response = htmlResponse(renderContactAdminPage(csrf.token));
+      response.headers.append("Set-Cookie", csrf.cookie);
+      return response;
+    }
+
+    if (pathname.startsWith(CONTACT_API_BASE)) {
+      return handleAdminContactRequest(request, env);
     }
 
     if (pathname === "/admin/calendar") {
@@ -128,7 +194,9 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
     if (
       origin &&
       configuredCorsOrigins(rawEnv).has(origin) &&
-      pathname.startsWith("/api/collections/")
+      (pathname.startsWith("/api/collections/") ||
+        pathname === "/api/forms/contact/schema" ||
+        pathname === "/api/forms/default-contact-form/schema")
     ) {
       const headers = new Headers(response.headers);
       headers.set("Access-Control-Allow-Origin", origin);
@@ -414,6 +482,74 @@ async function handleAdminCalendarRequest(
   }
 }
 
+async function handleAdminContactRequest(
+  request: Request,
+  env: CalendarBindings & ContactBindings,
+): Promise<Response> {
+  const user = await authenticate(request, env);
+  if (!user) {
+    return errorResponse(401, "unauthorized", "Sign in required.");
+  }
+  if (!(await hasAdminAccess(env, user))) {
+    return errorResponse(
+      403,
+      "forbidden",
+      "An active CMS administrator account is required.",
+    );
+  }
+
+  const url = new URL(request.url);
+  const relative = url.pathname.slice(CONTACT_API_BASE.length);
+  try {
+    if (request.method === "GET" && (relative === "" || relative === "/")) {
+      return listContactSubmissions(request, env);
+    }
+    const match = relative.match(/^\/([0-9a-f-]{36})$/i);
+    if (!match) {
+      return errorResponse(404, "not_found", "Not found.");
+    }
+    const id = match[1];
+    if (request.method === "GET") {
+      return getContactSubmission(id, env, user.userId);
+    }
+    if (request.method === "PATCH") {
+      const csrfError = await validateMutationCsrf(request, env);
+      if (csrfError) return csrfError;
+      return updateContactSubmission(request, id, env, user.userId);
+    }
+    return errorResponse(405, "method_not_allowed", "Method not allowed.");
+  } catch (error) {
+    if (error instanceof ContactRequestError) {
+      return errorResponse(error.status, error.code, error.message);
+    }
+    if (
+      error instanceof SyntaxError ||
+      (error instanceof Error &&
+        (error.message.includes("request body") ||
+          error.message.includes("too large")))
+    ) {
+      return errorResponse(
+        400,
+        "invalid_request",
+        error instanceof Error ? error.message : "Invalid request.",
+      );
+    }
+    console.error(
+      JSON.stringify({
+        event: "contact_admin_request_failed",
+        path: url.pathname,
+        actorId: user.userId,
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
+    );
+    return errorResponse(
+      500,
+      "contact_unavailable",
+      "Contact service unavailable.",
+    );
+  }
+}
+
 async function readJson(request: Request): Promise<Record<string, unknown>> {
   if (
     !(request.headers.get("Content-Type") ?? "")
@@ -485,6 +621,21 @@ async function hasCalendarPermission(
      LIMIT 1`,
   )
     .bind(user.userId, CALENDAR_PERMISSION, CALENDAR_PERMISSION)
+    .first<{ id: string }>();
+  return Boolean(row);
+}
+
+async function hasAdminAccess(
+  env: CalendarBindings,
+  user: AuthenticatedUser,
+): Promise<boolean> {
+  if (user.role !== "admin") return false;
+  const row = await env.DB.prepare(
+    `SELECT id FROM users
+     WHERE id = ? AND role = 'admin' AND is_active = 1
+     LIMIT 1`,
+  )
+    .bind(user.userId)
     .first<{ id: string }>();
   return Boolean(row);
 }

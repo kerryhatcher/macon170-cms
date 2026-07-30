@@ -6,6 +6,9 @@ Its SonicJS collection is the **Volunteer leadership roster**. Calendar events
 use a dedicated, permissioned CMS workflow documented in
 [docs/calendar.md](docs/calendar.md). Each roster record is a role; names may
 be blank for vacant roles. Publish only records approved for display.
+Parent inquiries use SonicJS’s existing `contact` form and native
+`form_submissions` model through the hardened workflow in
+[docs/contact.md](docs/contact.md).
 
 ## Getting Started
 
@@ -48,8 +51,10 @@ be blank for vacant roles. Publish only records approved for display.
    cp .dev.vars.example .dev.vars
    ```
 
-   Replace `JWT_SECRET` in the ignored `.dev.vars` file with a unique local secret. The default
-   CORS origins permit the Astro dev server on this computer and the LAN hostname:
+   Replace `JWT_SECRET` in the ignored `.dev.vars` file with a unique local
+   secret. The example uses Cloudflare’s always-pass Turnstile test secret,
+   never the production value. The default CORS origins permit the Astro dev
+   server on this computer and the LAN hostname:
 
    ```dotenv
    CORS_ORIGINS=http://localhost:41771,http://kudzu:41771
@@ -95,9 +100,9 @@ cms/
 - `bun run deploy` - Deploy to Cloudflare
 - `bun run db:migrate` - Run migrations on production database
 - `bun run db:migrate:local` - Run migrations locally
-- `bun run test:smoke:calendar` - Check the deployed calendar JSON, ICS, caching, CORS, and login redirect
+- `bun run test:smoke` - Check deployed calendar and contact contracts, CORS, rejection, and login protection
 - `bun run type-check` - Check TypeScript types
-- `bun run test` - Run tests
+- `bun run test` - Run unit/security tests and the idempotent local migration contract
 
 ## Admin access
 
@@ -114,8 +119,14 @@ CSRF protection, and `calendar.manage`.
 
 `GET /api/version` exposes the deployed commit in a no-cache JSON response.
 Continuous delivery injects the merge commit SHA, waits until that exact
-version reaches the custom domain, and then runs the calendar smoke suite with
+version reaches the custom domain, and then runs the calendar/contact smoke suite with
 bounded exponential-backoff retries. Local development reports `development`.
+
+The public Pack-branded form posts to `/api/forms/contact/submit`;
+`/api/forms/contact/schema` remains public. Only active CMS administrators may
+open `/admin/forms/default-contact-form/submissions` or use the versioned
+`/api/contact-admin/v1/submissions` queue API. The standalone SonicJS renderer
+redirects to `https://www.macon170.com/contact/`.
 
 ## Deployment
 
@@ -148,9 +159,13 @@ GitHub Actions validates pull requests and deploys only pushes to `main`. Config
 - `CLOUDFLARE_API_TOKEN` — deployment token for the Pack 170 Cloudflare account
 - `CLOUDFLARE_ACCOUNT_ID` — Pack 170 Cloudflare account ID
 
-The production `JWT_SECRET` stays in the Worker as a Cloudflare secret; ordinary deployments preserve it and do not copy it into GitHub.
+The production `JWT_SECRET` and `TURNSTILE_SECRET` stay in the Worker as
+Cloudflare secrets; ordinary deployments preserve them and do not copy either
+value into GitHub. Configure `TURNSTILE_SECRET` separately before deploying the
+contact migration.
 
-The deployment smoke runner accepts `EXPECTED_VERSION`,
+The deployment smoke runner checks the calendar plus contact schema version,
+CORS/preflight, missing-token rejection, and queue login redirect. It accepts `EXPECTED_VERSION`,
 `VERSION_MAX_ATTEMPTS`, and `SMOKE_MAX_ATTEMPTS`. CI sets the expected version
 to the workflow commit; local smoke runs omit it and test the currently served
 deployment directly.

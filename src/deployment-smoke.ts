@@ -2,6 +2,10 @@ import {
   smokeCalendar,
   type CalendarSmokeResult,
 } from "./calendar-smoke";
+import {
+  smokeContact,
+  type ContactSmokeResult,
+} from "./contact-smoke";
 
 type RetryOptions = {
   maxAttempts: number;
@@ -20,7 +24,8 @@ type DeploymentSmokeOptions = {
   smokeRetry?: Partial<RetryOptions>;
 };
 
-export type DeploymentSmokeResult = CalendarSmokeResult & {
+export type DeploymentSmokeResult = CalendarSmokeResult &
+  ContactSmokeResult & {
   deploymentVersion: string | null;
 };
 
@@ -135,8 +140,11 @@ export async function smokeDeployment({
     : null;
 
   const result = await retryWithBackoff(
-    "calendar smoke test",
-    () => smokeCalendar({ baseUrl, publicOrigin, fetchImpl }),
+    "CMS smoke test",
+    async () => ({
+      ...(await smokeCalendar({ baseUrl, publicOrigin, fetchImpl })),
+      ...(await smokeContact({ baseUrl, publicOrigin, fetchImpl })),
+    }),
     retryOptions(defaultSmokeRetry, smokeRetry),
   );
 

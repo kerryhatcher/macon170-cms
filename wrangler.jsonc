@@ -2,7 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "macon170-cms",
   "main": "src/index.ts",
-  "compatibility_date": "2026-07-29",
+  "compatibility_date": "2026-07-30",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "routes": [{ "pattern": "cms.macon170.com", "custom_domain": true }],
@@ -15,11 +15,23 @@
     }
   ],
   "r2_buckets": [{ "binding": "MEDIA_BUCKET", "bucket_name": "macon170-cms-media" }],
+  "ratelimits": [
+    {
+      "name": "CONTACT_RATE_LIMITER",
+      "namespace_id": "17004",
+      "simple": { "limit": 6, "period": 60 }
+    }
+  ],
   "vars": {
     "APP_VERSION": "development",
     "ENVIRONMENT": "production",
-    "CORS_ORIGINS": "https://www.macon170.com"
+    "CORS_ORIGINS": "https://www.macon170.com",
+    "PUBLIC_SITE_ORIGIN": "https://www.macon170.com",
+    "TURNSTILE_EXPECTED_ACTION": "turnstile-spin-v2",
+    "TURNSTILE_EXPECTED_HOSTNAMES": "macon170.com,www.macon170.com"
   },
+  // TURNSTILE_SECRET is a Worker secret. Configure it separately before contact cutover.
+  "triggers": { "crons": ["17 3 * * *"] },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
