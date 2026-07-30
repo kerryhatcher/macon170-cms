@@ -256,6 +256,12 @@ export async function handleContactSubmission(
         sourcePath,
         countryCode,
       ),
+      env.DB.prepare(
+        `UPDATE forms
+         SET submission_count = COALESCE(submission_count, 0) + 1,
+             updated_at = ?
+         WHERE id = ?`,
+      ).bind(now, form.id),
     ]);
 
     console.log(
@@ -844,7 +850,7 @@ function contactErrorResponse(
   error: ContactRequestError,
   publicOrigin: string,
 ): Response {
-  if (isJsonRequest(request)) {
+  if (request.method === "OPTIONS" || isJsonRequest(request)) {
     return Response.json(
       {
         success: false,

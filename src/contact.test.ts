@@ -188,6 +188,30 @@ describe("contact origin, honeypot, and rate limiting", () => {
     );
   });
 
+  it("rejects an unconfigured preflight without redirecting", async () => {
+    const { env, batches } = contactEnv();
+    const response = await handleContactSubmission(
+      new Request(
+        "https://cms.macon170.com/api/forms/contact/submit",
+        {
+          method: "OPTIONS",
+          headers: { Origin: "https://attacker.example" },
+          redirect: "manual",
+        },
+      ),
+      env,
+      successfulTurnstile,
+    );
+    expect(response.status).toBe(403);
+    expect(response.headers.get("Location")).toBeNull();
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      error: { code: "security" },
+    });
+    expect(batches).toHaveLength(0);
+  });
+
   it("rejects an unconfigured origin without storage", async () => {
     const { env, batches } = contactEnv();
     const response = await handleContactSubmission(
@@ -374,7 +398,7 @@ describe("contact persistence and redirects", () => {
     expect(result.submissionId).toMatch(/^[0-9a-f-]{36}$/);
     expect(result.contentId).toMatch(/^[0-9a-f-]{36}$/);
     expect(batches).toHaveLength(1);
-    expect(batches[0]).toHaveLength(2);
+    expect(batches[0]).toHaveLength(3);
 
     const serialized = JSON.stringify(
       batches[0].flatMap((statement) => statement.values),
@@ -385,8 +409,13 @@ describe("contact persistence and redirects", () => {
     expect(batches[0][0].sql).toContain("INSERT INTO content");
     expect(batches[0][0].sql).toContain("'draft'");
     expect(batches[0][1].sql).toContain("INSERT INTO form_submissions");
+    expect(batches[0][2].sql).toContain("SET submission_count");
     expect(batches[0][0].values).toContain(result.contentId);
     expect(batches[0][1].values).toContain(result.contentId);
+    expect(batches[0][2].values).toEqual([
+      expect.any(Number),
+      "default-contact-form",
+    ]);
   });
 
   it("redirects browser submissions to the branded success and error states", async () => {
