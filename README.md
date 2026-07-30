@@ -11,6 +11,11 @@ Its first collection is **Volunteer leadership roster**. Each record is a role; 
 - Node.js 18 or higher
 - A Cloudflare account (free tier works great)
 - Wrangler CLI (installed with dependencies)
+- [pii-hound v0.1.9](https://github.com/saddledata/pii-hound/releases/tag/v0.1.9)
+  on your `PATH`. Download the binary for your platform from that release and
+  verify it against the published `checksums.txt` before installing it. The
+  installed pre-commit hook scans changed files and blocks commits containing
+  detected PII or secrets.
 
 ### Installation
 
