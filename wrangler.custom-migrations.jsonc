@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "macon170-cms-custom-migrations",
+  "compatibility_date": "2026-07-29",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "macon170-cms",
+      "database_id": "b3282c32-5fa3-4612-a4d2-757bcf64f67f",
+      "migrations_dir": "./migrations/custom"
+    }
+  ]
+}

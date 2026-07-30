@@ -39,9 +39,12 @@ cookie/header pair for mutations, and uses `expectedRevision` for changes.
 
 ## Local migration and recovery
 
-`bun run db:migrate:local` applies SonicJS migrations followed by the idempotent
-calendar schema in `migrations/calendar/001_calendar.sql`. Production migrations
-must run only in an approved deployment window.
+`bun run db:migrate:local` applies SonicJS migrations followed by every
+unapplied Pack-specific migration in `migrations/custom/`. Production uses the
+same two tracked migration ledgers through `bun run db:migrate`. Add new custom
+schema changes as sequentially numbered SQL files; never edit an applied
+migration. Production migrations must run only in an approved deployment
+window.
 
 The history table is append-only and contains a complete snapshot for every
 revision. To recover from an incorrect change:
