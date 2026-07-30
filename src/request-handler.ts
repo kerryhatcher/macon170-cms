@@ -219,7 +219,11 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
           "An active CMS administrator account is required.",
         );
       }
-      return htmlResponse(renderInvitePage());
+      const csrf = await ensureCsrfToken(request, env);
+      if (csrf instanceof Response) return csrf;
+      const response = htmlResponse(renderInvitePage(csrf.token));
+      response.headers.append("Set-Cookie", csrf.cookie);
+      return response;
     }
 
     if (pathname === CONTACT_QUEUE_PATH) {

@@ -136,7 +136,8 @@ describe('CMS request guard', () => {
       executionContext,
     )
     expect(response.status).toBe(200)
-    await expect(response.text()).resolves.toContain('Invite a volunteer')
+    expect(response.headers.get('Set-Cookie')).toContain('csrf_token=')
+    await expect(response.text()).resolves.toContain("'X-CSRF-Token':CSRF")
   })
 
   it('exposes the deployed version without caching', async () => {
