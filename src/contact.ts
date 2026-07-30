@@ -4,7 +4,7 @@ export const CONTACT_FORM_ID = "default-contact-form";
 export const CONTACT_FORM_NAME = "contact";
 export const CONTACT_FORM_VERSION = "pack-contact-v1";
 export const CONTACT_QUEUE_PATH =
-  "/admin/forms/default-contact-form/submissions";
+  "/admin/contact-form";
 export const CONTACT_API_BASE = "/api/contact-admin/v1/submissions";
 export const CONTACT_RETENTION_DAYS = 365;
 
@@ -213,7 +213,7 @@ export async function handleContactSubmission(
     const countryCode = truncate(
       request.headers.get("CF-IPCountry"),
       2,
-    )?.toUpperCase();
+    )?.toUpperCase() ?? null;
     const sourcePath = "/contact/";
     const contentData = JSON.stringify({
       title: input.parentName,

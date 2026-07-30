@@ -18,7 +18,7 @@ export function renderLoginPage(url: URL): string {
   const message = url.searchParams.get('message')
   const returnTo = url.searchParams.get('returnTo') === '/admin/calendar'
     ? '/admin/calendar'
-    : '/admin/dashboard'
+    : '/dash'
   const returnToJson = JSON.stringify(returnTo).replaceAll('<', '\\u003c')
 
   return `<!doctype html>

@@ -69,7 +69,7 @@ describe("contact deployment smoke", () => {
           status: 302,
           headers: {
             Location:
-              "https://cms.macon170.com/auth/login?returnTo=%2Fadmin%2Fforms%2Fdefault-contact-form%2Fsubmissions",
+              "https://cms.macon170.com/auth/login?returnTo=%2Fadmin%2Fcontact-form",
           },
         }),
       );

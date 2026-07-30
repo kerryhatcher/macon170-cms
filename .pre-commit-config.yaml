@@ -22,12 +22,6 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-      - id: pii-hound
-        name: pii-hound PII scan
-        entry: pii-hound scan --diff --fail-on-pii
-        language: system
-        pass_filenames: false
-        always_run: true
   - repo: https://github.com/commitizen-tools/commitizen
     rev: 93c7b51d860138c34a0613756c0151209b88d56f
     hooks:

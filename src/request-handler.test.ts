@@ -357,14 +357,14 @@ describe('CMS request guard', () => {
     const handleRequest = createCmsRequestHandler(vi.fn())
     const anonymous = await handleRequest(
       new Request(
-        'https://cms.macon170.com/admin/forms/default-contact-form/submissions',
+        'https://cms.macon170.com/admin/contact-form',
       ),
       cmsEnv(),
       executionContext,
     )
     expect(anonymous.status).toBe(302)
     expect(anonymous.headers.get('Location')).toContain(
-      '/auth/login?returnTo=%2Fadmin%2Fforms%2Fdefault-contact-form%2Fsubmissions',
+      '/auth/login?returnTo=%2Fadmin%2Fcontact-form',
     )
 
     const adminToken = await AuthManager.generateToken(
@@ -383,7 +383,7 @@ describe('CMS request guard', () => {
     }
     const page = await handleRequest(
       new Request(
-        'https://cms.macon170.com/admin/forms/default-contact-form/submissions',
+        'https://cms.macon170.com/admin/contact-form',
         { headers: { Cookie: `auth_token=${adminToken}` } },
       ),
       cmsEnv(undefined, db),
@@ -470,7 +470,7 @@ describe('CMS request guard', () => {
     )
     const response = await createCmsRequestHandler(vi.fn())(
       new Request(
-        'https://cms.macon170.com/admin/forms/default-contact-form/submissions',
+        'https://cms.macon170.com/admin/contact-form',
         { headers: { Cookie: `auth_token=${token}` } },
       ),
       cmsEnv(),
