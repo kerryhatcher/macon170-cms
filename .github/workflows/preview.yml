@@ -58,7 +58,11 @@ jobs:
       - name: Comment isolated preview URLs
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh pr comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "## Isolated CMS preview\n\nCMS: https://macon170-cms-pr-$NUMBER.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev\nFrontend: https://macon170-pr-$NUMBER.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev\n\nCMS commit: $GITHUB_SHA; frontend source: macon170.com main. Synthetic preview storage only; invitation email must remain captured-only."
+        run: |
+          cms_url="https://macon170-cms-pr-$NUMBER.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev"
+          frontend_url="https://macon170-pr-$NUMBER.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev"
+          body="$(printf '## Isolated CMS preview\n\nCMS: %s\nFrontend: %s\n\nCMS commit: %s; frontend source: macon170.com main. Synthetic preview storage only; invitation email must remain captured-only.' "$cms_url" "$frontend_url" "$GITHUB_SHA")"
+          gh pr comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "$body"
 
   cleanup:
     if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
