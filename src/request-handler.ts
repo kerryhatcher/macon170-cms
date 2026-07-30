@@ -238,7 +238,11 @@ async function conditionalResponse(
       .get("If-None-Match")
       ?.split(",")
       .map((value) => value.trim())
-      .some((value) => value === etag || value === "*")
+      .some(
+        (value) =>
+          value === "*" ||
+          value.replace(/^W\//, "") === etag.replace(/^W\//, ""),
+      )
   ) {
     return new Response(null, { status: 304, headers });
   }
