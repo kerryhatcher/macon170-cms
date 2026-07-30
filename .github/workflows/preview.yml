@@ -15,11 +15,15 @@ permissions:
 jobs:
   preview:
     if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    # Configure this protected Environment before enabling previews. It keeps
+    # Cloudflare credentials away from unapproved PR code.
+    environment: preview
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      PREVIEW_JWT_SEED: ${{ secrets.PREVIEW_JWT_SEED }}
       CLOUDFLARE_ACCOUNT_SUBDOMAIN: ${{ vars.CLOUDFLARE_ACCOUNT_SUBDOMAIN }}
       NUMBER: ${{ github.event.pull_request.number }}
     steps:
@@ -30,13 +34,22 @@ jobs:
       - name: Create isolated CMS storage
         run: |
           cms_name="macon170-cms-pr-$NUMBER"; db_name="$cms_name"; bucket_name="$cms_name-media"
-          db_json="$(bunx wrangler d1 create "$db_name" --json)"
-          db_id="$(jq -r '.uuid // .result.uuid' <<< "$db_json")"
-          bunx wrangler r2 bucket create "$bucket_name"
+          : "${CLOUDFLARE_API_TOKEN:?Configure CLOUDFLARE_PREVIEW_API_TOKEN in the protected preview environment}"
+          : "${CLOUDFLARE_ACCOUNT_ID:?Configure CLOUDFLARE_ACCOUNT_ID as a preview environment variable}"
+          : "${PREVIEW_JWT_SEED:?Configure PREVIEW_JWT_SEED in the protected preview environment}"
+          db_id="$(bunx wrangler d1 list --json | jq -r --arg name "$db_name" '(.result // .)[] | select(.name == $name) | .uuid' | head -1)"
+          if [ -z "$db_id" ]; then
+            db_json="$(bunx wrangler d1 create "$db_name" --json)"
+            db_id="$(jq -r '.uuid // .result.uuid' <<< "$db_json")"
+          fi
+          test -n "$db_id"
+          if ! bunx wrangler r2 bucket list | grep --fixed-strings --quiet "$bucket_name"; then
+            bunx wrangler r2 bucket create "$bucket_name"
+          fi
           frontend_url="https://macon170-pr-$NUMBER.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev"
           # Rate-limit namespaces are caller-chosen account-wide positive integers; this prefix is reserved for previews.
           bun scripts/preview-config.mjs "$cms_name" "$db_name" "$db_id" "$bucket_name" "$frontend_url" "170$NUMBER"
-          printf '%s' "$(openssl rand -hex 32)" | bunx wrangler secret put JWT_SECRET --config .wrangler.preview.generated.json
+          printf 'macon170-cms-pr-%s' "$NUMBER" | openssl dgst -sha256 -hmac "$PREVIEW_JWT_SEED" -binary | base64 | tr -d '\n' | bunx wrangler secret put JWT_SECRET --config .wrangler.preview.generated.json
           printf '%s' "1x00000000000000000000AA" | bunx wrangler secret put TURNSTILE_SECRET --config .wrangler.preview.generated.json
       - name: Deploy and migrate isolated CMS
         run: |
@@ -54,7 +67,10 @@ jobs:
           cms_url="https://macon170-cms-pr-$NUMBER.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev"; frontend_url="https://macon170-pr-$NUMBER.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev"
           curl --fail-with-body --silent --show-error "$frontend_url/calendar/" | grep --fixed-strings --quiet "$cms_url/api/calendar/v1/calendar.ics"
           curl --fail-with-body --silent --show-error --header "Origin: $frontend_url" "$cms_url/api/collections/leadership-roster/content" | jq --exit-status 'has("data")' > /dev/null
-          curl --fail-with-body --silent --show-error "$cms_url/api/forms/contact/schema" > /dev/null
+          curl --fail-with-body --silent --show-error --header "Origin: $frontend_url" --dump-header /tmp/contact-schema-headers --output /dev/null "$cms_url/api/forms/contact/schema"
+          grep --ignore-case --fixed-strings --quiet "access-control-allow-origin: $frontend_url" /tmp/contact-schema-headers
+          curl --fail-with-body --silent --show-error --request OPTIONS --header "Origin: $frontend_url" --header "Access-Control-Request-Method: POST" --dump-header /tmp/contact-preflight-headers --output /dev/null "$cms_url/api/forms/contact/submit"
+          grep --ignore-case --fixed-strings --quiet "access-control-allow-origin: $frontend_url" /tmp/contact-preflight-headers
       - name: Comment isolated preview URLs
         env:
           GH_TOKEN: ${{ github.token }}
@@ -66,10 +82,11 @@ jobs:
 
   cleanup:
     if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    environment: preview
     runs-on: ubuntu-latest
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -77,7 +94,14 @@ jobs:
         with: { bun-version: latest }
       - run: bun install --frozen-lockfile
       - run: |
-          bunx wrangler delete --config wrangler.preview.jsonc --name "macon170-cms-pr-$NUMBER" || true
-          bunx wrangler delete --config wrangler.preview.jsonc --name "macon170-pr-$NUMBER" || true
-          bunx wrangler r2 bucket delete "macon170-cms-pr-$NUMBER-media" || true
-          bunx wrangler d1 delete "macon170-cms-pr-$NUMBER" || true
+          : "${CLOUDFLARE_API_TOKEN:?Configure CLOUDFLARE_PREVIEW_API_TOKEN in the protected preview environment}"
+          : "${CLOUDFLARE_ACCOUNT_ID:?Configure CLOUDFLARE_ACCOUNT_ID as a preview environment variable}"
+          cms_name="macon170-cms-pr-$NUMBER"; bucket_name="$cms_name-media"
+          bun scripts/preview-config.mjs "$cms_name" "$cms_name" placeholder "$bucket_name" "https://macon170-pr-$NUMBER.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev" "170$NUMBER"
+          bunx wrangler delete "$cms_name" --force
+          bunx wrangler delete "macon170-pr-$NUMBER" --force
+          bunx wrangler deploy --config .wrangler.preview.cleanup.generated.json
+          curl --fail-with-body --silent --show-error "https://$cms_name-cleanup.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev"
+          bunx wrangler delete "$cms_name-cleanup" --force
+          bunx wrangler r2 bucket delete "$bucket_name"
+          bunx wrangler d1 delete "$cms_name" --skip-confirmation
