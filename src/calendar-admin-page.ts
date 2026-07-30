@@ -1,3 +1,9 @@
+import {
+  renderAdminHeader,
+  renderAdminHeaderStyles,
+  renderAdminHeaderScript,
+} from "./admin-header";
+
 export function renderCalendarAdminPage(csrfToken: string): string {
   const token = JSON.stringify(csrfToken).replaceAll("<", "\\u003c");
   return `<!doctype html>
@@ -11,9 +17,7 @@ export function renderCalendarAdminPage(csrfToken: string): string {
     :root { color-scheme: light; --blue: #003f87; --deep: #002b5c; --gold: #fcd116; --paper: #f7f1e3; --white: #fffdf7; --ink: #272b2e; --muted: #59636b; --rule: #d7cdb8; --red: #9b2c2c; --green: #28543f; font-family: "Segoe UI", sans-serif; }
     * { box-sizing: border-box; }
     body { background: var(--paper); color: var(--ink); margin: 0; }
-    header { align-items: center; background: var(--deep); color: white; display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; padding: 1rem clamp(1rem, 4vw, 3rem); }
-    header a { color: white; }
-    header strong { font-size: 1.15rem; }
+    ${renderAdminHeaderStyles()}
     main { display: grid; gap: 1.5rem; margin: 0 auto; max-width: 90rem; padding: 1.5rem; }
     .notice { border-inline-start: 4px solid var(--blue); background: #e8f0f8; padding: .8rem 1rem; }
     .notice[data-kind="error"] { background: #fbe9e7; border-color: var(--red); }
@@ -47,10 +51,7 @@ export function renderCalendarAdminPage(csrfToken: string): string {
   </style>
 </head>
 <body>
-  <header>
-    <strong>Pack 170 CMS</strong>
-    <nav><a href="https://www.macon170.com">Public site</a> · <a href="/admin/dashboard">CMS dashboard</a> · <a href="/auth/logout">Sign out</a></nav>
-  </header>
+${renderAdminHeader("calendar")}
   <main>
     <div>
       <h1>Calendar management</h1>
@@ -207,6 +208,7 @@ export function renderCalendarAdminPage(csrfToken: string): string {
     document.querySelector('#new-event').addEventListener('click', () => edit(null));
     load().catch((error) => showNotice(error.message, 'error'));
   </script>
+  <script>${renderAdminHeaderScript()}</script>
 </body>
 </html>`;
 }

@@ -22,9 +22,12 @@ import {
   validateCalendarInput,
 } from "./calendar";
 import { renderContactAdminPage } from "./contact-admin-page";
+import { renderDashPage } from "./dash-page";
+import { renderLeadershipPage } from "./leadership-page";
 import {
   CONTACT_API_BASE,
   CONTACT_QUEUE_PATH,
+  LEGACY_CONTACT_QUEUE_PATH,
   ContactRequestError,
   type ContactBindings,
   getContactSubmission,
@@ -123,6 +126,62 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
         `${env.PUBLIC_SITE_ORIGIN ?? "https://www.macon170.com"}/contact/`,
         302,
       );
+    }
+
+    // Keep the native SonicJS submission page private and send existing
+    // bookmarks to the Pack-owned queue, which enforces CMS admin access and
+    // records the Pack audit events.
+    if (pathname === LEGACY_CONTACT_QUEUE_PATH) {
+      if (!['GET', 'HEAD'].includes(request.method)) {
+        return errorResponse(404, 'not_found', 'Not found.')
+      }
+      return Response.redirect(`${url.origin}${CONTACT_QUEUE_PATH}`, 302)
+    }
+
+    if (pathname === "/dash") {
+      if (request.method !== "GET") {
+        return errorResponse(405, "method_not_allowed", "Method not allowed.");
+      }
+      const user = await authenticate(request, env);
+      if (!user) {
+        return Response.redirect(
+          `${url.origin}/auth/login?returnTo=${encodeURIComponent("/dash")}`,
+          302,
+        );
+      }
+      if (!(await hasAdminAccess(env, user))) {
+        return errorResponse(
+          403,
+          "forbidden",
+          "An active CMS administrator account is required.",
+        );
+      }
+      return htmlResponse(renderDashPage());
+    }
+
+    if (pathname === "/admin/leadership") {
+      if (request.method !== "GET") {
+        return errorResponse(405, "method_not_allowed", "Method not allowed.");
+      }
+      const user = await authenticate(request, env);
+      if (!user) {
+        return Response.redirect(
+          `${url.origin}/auth/login?returnTo=${encodeURIComponent("/admin/leadership")}`,
+          302,
+        );
+      }
+      if (!(await hasAdminAccess(env, user))) {
+        return errorResponse(
+          403,
+          "forbidden",
+          "An active CMS administrator account is required.",
+        );
+      }
+      const csrf = await ensureCsrfToken(request, env);
+      if (csrf instanceof Response) return csrf;
+      const response = htmlResponse(renderLeadershipPage(csrf.token));
+      response.headers.append("Set-Cookie", csrf.cookie);
+      return response;
     }
 
     if (pathname === CONTACT_QUEUE_PATH) {

@@ -3,6 +3,11 @@ import {
   CONTACT_STATUS_LABELS,
   CONTACT_STATUSES,
 } from "./contact";
+import {
+  renderAdminHeader,
+  renderAdminHeaderStyles,
+  renderAdminHeaderScript,
+} from "./admin-header";
 
 export function renderContactAdminPage(csrfToken: string): string {
   const statusOptions = CONTACT_STATUSES.map(
@@ -27,8 +32,8 @@ export function renderContactAdminPage(csrfToken: string): string {
     :root{color-scheme:light;--blue:#003f87;--deep:#002b5c;--gold:#fcd116;--ink:#272b2e;--muted:#5d6670;--paper:#fffdf5;--wash:#eef5fb;--rule:#ccd6e0;--green:#1f6b45}
     *{box-sizing:border-box}body{margin:0;background:#f8f7f2;color:var(--ink);font:16px/1.5 system-ui,sans-serif}
     a{color:var(--blue)}button,select{font:inherit}.skip{position:absolute;left:-9999px}.skip:focus{left:1rem;top:1rem;background:#fff;padding:.75rem;z-index:10}
-    header{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem clamp(1rem,4vw,3rem);background:var(--deep);color:#fff}
-    header a{color:#fff;font-weight:700;text-decoration:none}main{max-width:1200px;margin:auto;padding:clamp(1rem,4vw,3rem)}
+    ${renderAdminHeaderStyles()}
+    main{max-width:1200px;margin:auto;padding:clamp(1rem,4vw,3rem)}
     .intro{display:grid;grid-template-columns:1fr minmax(260px,360px);gap:2rem;align-items:end}.eyebrow{font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--blue)}
     h1{font-size:clamp(2.4rem,7vw,4.8rem);line-height:1;margin:.25rem 0}.safety{padding:1.25rem;background:var(--green);color:#fff;border-radius:8px 20px 10px 8px}
     .filters{display:flex;gap:.5rem;margin:2rem 0 1rem;overflow:auto}.filters button{border:2px solid var(--blue);border-radius:999px;background:#fff;color:var(--blue);padding:.5rem 1rem;font-weight:700;white-space:nowrap}
@@ -47,7 +52,7 @@ export function renderContactAdminPage(csrfToken: string): string {
 </head>
 <body>
 <a class="skip" href="#main">Skip to inquiries</a>
-<header><a href="/admin">Pack 170 CMS</a><nav><a href="/admin/calendar">Calendar</a></nav></header>
+${renderAdminHeader("contact-form")}
 <main id="main">
   <section class="intro">
     <div><p class="eyebrow">Parent inquiries</p><h1>Volunteer queue</h1><p>Read parent questions, follow up through approved adult channels, and keep the queue current.</p></div>
@@ -76,6 +81,7 @@ function renderDetail(submission){const phone=submission.phone?'<a href="tel:'+e
 async function updateStatus(id,status,select){select.disabled=true;queueStatus.textContent='Saving status…';try{const response=await fetch(API+'/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRF-Token':CSRF},body:JSON.stringify({status})});if(!response.ok)throw new Error('Unable to save status.');queueStatus.textContent='Status saved.';await load();}catch(error){queueStatus.textContent=error instanceof Error?error.message:'Unable to save status.';}finally{select.disabled=false;}}
 document.querySelectorAll('[data-status]').forEach((button)=>button.addEventListener('click',()=>{currentStatus=button.dataset.status||'';page=1;selectedId=null;document.querySelectorAll('[data-status]').forEach((item)=>item.setAttribute('aria-pressed',String(item===button)));detail.innerHTML='<div class="empty"><strong>Select a message</strong><span>Parent contact details and the full question will appear here.</span></div>';load();}));
 previous.addEventListener('click',()=>{if(page>1){page-=1;selectedId=null;load();}});next.addEventListener('click',()=>{if(hasMore){page+=1;selectedId=null;load();}});load();
+${renderAdminHeaderScript()}
 </script>
 </body>
 </html>`;

@@ -16,9 +16,16 @@ function notice(message: string | null, kind: 'error' | 'message'): string {
 export function renderLoginPage(url: URL): string {
   const error = url.searchParams.get('error')
   const message = url.searchParams.get('message')
-  const returnTo = url.searchParams.get('returnTo') === '/admin/calendar'
-    ? '/admin/calendar'
-    : '/admin/dashboard'
+  const requestedReturnTo = url.searchParams.get('returnTo')
+  const allowedReturnTo = new Set([
+    '/dash',
+    '/admin/calendar',
+    '/admin/contact-form',
+    '/admin/leadership',
+  ])
+  const returnTo = allowedReturnTo.has(requestedReturnTo ?? '')
+    ? requestedReturnTo!
+    : '/dash'
   const returnToJson = JSON.stringify(returnTo).replaceAll('<', '\\u003c')
 
   return `<!doctype html>

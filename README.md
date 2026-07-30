@@ -17,11 +17,6 @@ Parent inquiries use SonicJS’s existing `contact` form and native
 - Node.js 18 or higher
 - A Cloudflare account (free tier works great)
 - Wrangler CLI (installed with dependencies)
-- [pii-hound v0.1.9](https://github.com/saddledata/pii-hound/releases/tag/v0.1.9)
-  on your `PATH`. Download the binary for your platform from that release and
-  verify it against the published `checksums.txt` before installing it. The
-  installed pre-commit hook scans changed files and blocks commits containing
-  detected PII or secrets.
 
 ### Installation
 
@@ -124,7 +119,7 @@ bounded exponential-backoff retries. Local development reports `development`.
 
 The public Pack-branded form posts to `/api/forms/contact/submit`;
 `/api/forms/contact/schema` remains public. Only active CMS administrators may
-open `/admin/forms/default-contact-form/submissions` or use the versioned
+open `/admin/contact-form` or use the versioned
 `/api/contact-admin/v1/submissions` queue API. The standalone SonicJS renderer
 redirects to `https://www.macon170.com/contact/`.
 
