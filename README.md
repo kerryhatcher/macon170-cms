@@ -159,6 +159,21 @@ Cloudflare secrets; ordinary deployments preserve them and do not copy either
 value into GitHub. Configure `TURNSTILE_SECRET` separately before deploying the
 contact migration.
 
+### Pull-request previews
+
+CMS pull requests from this repository use the protected `preview` GitHub
+Environment. Configure it with required reviewers and these preview-only
+values: `CLOUDFLARE_PREVIEW_API_TOKEN` (least-privilege token able to manage
+only Workers, D1, and R2 preview resources), `PREVIEW_JWT_SEED` (a random
+secret used to derive an isolated stable JWT secret per PR),
+`CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_ACCOUNT_SUBDOMAIN` as Environment
+variables. Do not reuse production environment secrets for previews.
+
+The close workflow removes the two preview Workers, empties the isolated R2
+bucket through a temporary cleanup Worker, then deletes its bucket and D1
+database. It deliberately fails on cleanup errors so no preview resource is
+silently orphaned.
+
 ## Volunteer invitations
 
 The CMS uses SonicJS's built-in user invitation and account-acceptance flow.
