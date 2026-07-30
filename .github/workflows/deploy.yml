@@ -50,16 +50,18 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      - name: Apply CMS D1 migrations
-        run: bun run db:migrate
-      - name: Deploy CMS Worker
+      - name: Deploy guarded CMS Worker
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --config wrangler.jsonc --var APP_VERSION:${{ github.sha }}
-      - name: Wait for deployed version and verify calendar
-        run: bun run test:smoke:calendar
+      - name: Apply CMS D1 migrations
+        # The guarded handler must be live before the migration makes the
+        # native SonicJS form public and disables its database-backed plugin.
+        run: bun run db:migrate
+      - name: Wait for deployed version and verify calendar and contact form
+        run: bun run test:smoke
         env:
           EXPECTED_VERSION: ${{ github.sha }}
       - name: Verify public roster API

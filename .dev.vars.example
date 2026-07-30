@@ -1,4 +1,8 @@
 # Copy this file to .dev.vars for local-only CMS development.
 ENVIRONMENT=development
 CORS_ORIGINS=http://localhost:41771,http://kudzu:41771
+PUBLIC_SITE_ORIGIN=http://localhost:41771
 JWT_SECRET=generate-a-unique-local-secret
+# Cloudflare's documented always-pass test secret. Replace only in the ignored
+# .dev.vars file; configure the real value with `wrangler secret put` in production.
+TURNSTILE_SECRET=1x0000000000000000000000000000000AA

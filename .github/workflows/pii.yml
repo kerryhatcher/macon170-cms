@@ -29,7 +29,21 @@ jobs:
           echo "$RUNNER_TEMP/pii-hound" >> "$GITHUB_PATH"
       - name: Scan pull-request changes for PII
         if: github.event_name == 'pull_request'
-        run: pii-hound scan --diff --base "${{ github.event.pull_request.base.sha }}" --fail-on-pii
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # Pass only formats supported by pii-hound. Its broad JSON suffix
+          # matching treats JSONC as JSON and can hang on Wrangler comments.
+          git diff --name-only --diff-filter=ACMR -z "$BASE_SHA" HEAD -- \
+            '*.csv' '*.env*' '*.json' '*.jsonl' '*.log' '*.parquet' '*.tfstate' \
+            '*.txt' '*.xlsm' '*.xlsx' '*.yaml' '*.yml' |
+            xargs --null --no-run-if-empty pii-hound scan --fail-on-pii --
       - name: Scan main changes for PII
         if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
-        run: pii-hound scan --diff --base "${{ github.event.before }}" --fail-on-pii
+        env:
+          BASE_SHA: ${{ github.event.before }}
+        run: |
+          git diff --name-only --diff-filter=ACMR -z "$BASE_SHA" HEAD -- \
+            '*.csv' '*.env*' '*.json' '*.jsonl' '*.log' '*.parquet' '*.tfstate' \
+            '*.txt' '*.xlsm' '*.xlsx' '*.yaml' '*.yml' |
+            xargs --null --no-run-if-empty pii-hound scan --fail-on-pii --
