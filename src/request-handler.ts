@@ -24,6 +24,7 @@ import {
 import { renderContactAdminPage } from "./contact-admin-page";
 import { renderDashPage } from "./dash-page";
 import { renderLeadershipPage } from "./leadership-page";
+import { renderInvitePage } from "./invite-page";
 import {
   CONTACT_API_BASE,
   CONTACT_QUEUE_PATH,
@@ -50,12 +51,28 @@ type AuthenticatedUser = {
   role: string;
 };
 
+type InviteEmailBindings = CalendarBindings & {
+  EMAIL?: SendEmail;
+  INVITE_FROM_EMAIL?: string;
+  INVITE_FROM_NAME?: string;
+  INVITE_REPLY_TO?: string;
+};
+
+type InvitationPayload = {
+  success?: boolean;
+  message?: string;
+  invitation_link?: string;
+  user?: { id?: string; email?: string; first_name?: string; last_name?: string };
+};
+
 const disabledAuthPaths = new Set([
   "/auth/seed-admin",
   "/auth/register",
   "/auth/register/form",
 ]);
 const managedTurnstilePluginPath = "/admin/plugins/turnstile";
+const inviteUserPath = "/admin/invite-user";
+const resendInvitationPath = "/admin/resend-invitation/";
 const publicCache = "public, max-age=300";
 const jsonContentType = "application/json; charset=UTF-8";
 
@@ -184,6 +201,27 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
       return response;
     }
 
+    if (pathname === "/admin/users/invite") {
+      if (request.method !== "GET") {
+        return errorResponse(405, "method_not_allowed", "Method not allowed.");
+      }
+      const user = await authenticate(request, env);
+      if (!user) {
+        return Response.redirect(
+          `${url.origin}/auth/login?returnTo=${encodeURIComponent("/admin/users/invite")}`,
+          302,
+        );
+      }
+      if (!(await hasAdminAccess(env, user))) {
+        return errorResponse(
+          403,
+          "forbidden",
+          "An active CMS administrator account is required.",
+        );
+      }
+      return htmlResponse(renderInvitePage());
+    }
+
     if (pathname === CONTACT_QUEUE_PATH) {
       if (request.method !== "GET") {
         return errorResponse(405, "method_not_allowed", "Method not allowed.");
@@ -248,7 +286,21 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
       return errorResponse(404, "not_found", "Not found.");
     }
 
+    if (isInvitationDeliveryRequest(request, pathname)) {
+      const inviteEnv = env as InviteEmailBindings;
+      if (!inviteEnv.EMAIL || !inviteEnv.INVITE_FROM_EMAIL) {
+        return errorResponse(
+          503,
+          "invite_email_unavailable",
+          "Volunteer invitations are not configured for email delivery.",
+        );
+      }
+    }
+
     const response = await appFetch(request, rawEnv, ctx);
+    if (isInvitationDeliveryRequest(request, pathname)) {
+      return deliverInvitationEmail(response, request, pathname, env as InviteEmailBindings);
+    }
     const origin = request.headers.get("Origin");
     if (
       origin &&
@@ -268,6 +320,127 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
     }
     return response;
   };
+}
+
+function isInvitationDeliveryRequest(request: Request, pathname: string): boolean {
+  return request.method === "POST" &&
+    (pathname === inviteUserPath || pathname.startsWith(resendInvitationPath));
+}
+
+async function deliverInvitationEmail(
+  response: Response,
+  request: Request,
+  pathname: string,
+  env: InviteEmailBindings,
+): Promise<Response> {
+  if (!response.ok) return response;
+
+  let payload: InvitationPayload;
+  try {
+    payload = await response.clone().json() as InvitationPayload;
+  } catch {
+    return response;
+  }
+  if (!payload.success || !payload.invitation_link) return response;
+
+  const invitationUrl = new URL(payload.invitation_link);
+  if (
+    invitationUrl.origin !== new URL(request.url).origin ||
+    invitationUrl.pathname !== "/auth/accept-invitation"
+  ) {
+    return errorResponse(500, "invite_link_invalid", "The invitation link could not be prepared.");
+  }
+
+  const recipient = await invitationRecipient(payload, pathname, env);
+  if (!recipient) {
+    return errorResponse(500, "invite_recipient_missing", "The invitation recipient could not be identified.");
+  }
+
+  try {
+    const message: EmailMessageBuilder = {
+      from: {
+        email: env.INVITE_FROM_EMAIL!,
+        name: env.INVITE_FROM_NAME ?? "Pack 170 Volunteers",
+      },
+      to: { email: recipient.email, name: recipient.name },
+      subject: "Set up your Pack 170 CMS account",
+      text: invitationText(recipient.name, invitationUrl.toString()),
+      html: invitationHtml(recipient.name, invitationUrl.toString()),
+    };
+    if (env.INVITE_REPLY_TO) message.replyTo = env.INVITE_REPLY_TO;
+    await env.EMAIL!.send(message);
+  } catch (error) {
+    console.error("Volunteer invitation email failed", error);
+    return invitationResponse(
+      {
+        error: "invite_delivery_failed",
+        message: "The account invitation was created, but the email could not be delivered. Use resend after resolving email delivery.",
+        invitationId: payload.user?.id ?? invitationIdFromPath(pathname),
+      },
+      502,
+    );
+  }
+
+  return invitationResponse({
+    success: true,
+    message: "Invitation email sent. The setup link expires in seven days.",
+    user: payload.user ? { id: payload.user.id, email: payload.user.email } : undefined,
+  });
+}
+
+async function invitationRecipient(
+  payload: InvitationPayload,
+  pathname: string,
+  env: InviteEmailBindings,
+): Promise<{ email: string; name: string } | null> {
+  if (payload.user?.email) {
+    return {
+      email: payload.user.email,
+      name: [payload.user.first_name, payload.user.last_name].filter(Boolean).join(" ") || payload.user.email,
+    };
+  }
+  const id = invitationIdFromPath(pathname);
+  if (!id) return null;
+  const user = await env.DB.prepare(
+    "SELECT email, first_name, last_name FROM users WHERE id = ? AND is_active = 0",
+  ).bind(id).first<{ email: string; first_name: string | null; last_name: string | null }>();
+  if (!user?.email) return null;
+  return {
+    email: user.email,
+    name: [user.first_name, user.last_name].filter(Boolean).join(" ") || user.email,
+  };
+}
+
+function invitationIdFromPath(pathname: string): string | null {
+  return pathname.startsWith(resendInvitationPath)
+    ? decodeURIComponent(pathname.slice(resendInvitationPath.length)) || null
+    : null;
+}
+
+function invitationText(name: string, invitationUrl: string): string {
+  return `Hello ${name},\n\nYou have been invited to help manage Pack 170 information. Use this one-time link to choose your password and activate your CMS account:\n\n${invitationUrl}\n\nThis link expires in seven days. If you were not expecting this invitation, you can ignore this email.\n\nPack 170 Volunteers`;
+}
+
+function invitationHtml(name: string, invitationUrl: string): string {
+  const safeName = escapeHtml(name);
+  const safeUrl = escapeHtml(invitationUrl);
+  return `<p>Hello ${safeName},</p><p>You have been invited to help manage Pack 170 information.</p><p><a href="${safeUrl}">Set up your CMS account</a></p><p>This one-time link expires in seven days. If you were not expecting this invitation, you can ignore this email.</p><p>Pack 170 Volunteers</p>`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function invitationResponse(body: Record<string, unknown>, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": jsonContentType, "Cache-Control": "no-store" },
+  });
 }
 
 function isPublicCalendarPath(pathname: string): boolean {

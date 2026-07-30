@@ -60,6 +60,12 @@ ${renderAdminHeader("dash")}
       <p>Create, edit, and publish pack events. Manage drafts, schedule changes, and keep families informed.</p>
       <span class="badge badge--gold" id="calendar-count">Loading&hellip;</span>
     </a>
+    <a class="card" href="/admin/users/invite">
+      <div class="card__icon card__icon--green">&#9993;</div>
+      <h2>Invite Volunteer</h2>
+      <p>Send a secure account-setup link and choose the volunteer's CMS role.</p>
+      <span class="badge badge--green">Account access</span>
+    </a>
     <a class="card" href="https://www.macon170.com" target="_blank" rel="noopener">
       <div class="card__icon card__icon--green">&#127758;</div>
       <h2>Public Site</h2>
@@ -72,6 +78,7 @@ ${renderAdminHeader("dash")}
     <nav>
       <a href="/admin/contact-form">&#9993; Contact queue</a>
       <a href="/admin/calendar">&#128197; Event editor</a>
+      <a href="/admin/users/invite">&#9993; Invite volunteer</a>
       <a href="/auth/logout">&#10140; Sign out</a>
     </nav>
   </div>

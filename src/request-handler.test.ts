@@ -22,6 +22,123 @@ describe('configuredCorsOrigins', () => {
 })
 
 describe('CMS request guard', () => {
+  it('requires email delivery configuration before creating a volunteer invitation', async () => {
+    const appFetch = vi.fn()
+    const response = await createCmsRequestHandler(appFetch)(
+      new Request('https://cms.example/admin/invite-user', { method: 'POST' }),
+      cmsEnv(),
+      executionContext,
+    )
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: 'invite_email_unavailable',
+        message: 'Volunteer invitations are not configured for email delivery.',
+      },
+    })
+    expect(appFetch).not.toHaveBeenCalled()
+  })
+
+  it('sends SonicJS invitation links through the Worker email binding without exposing the token', async () => {
+    const email = { send: vi.fn().mockResolvedValue({ messageId: 'email-123' }) }
+    const appFetch = vi.fn().mockResolvedValue(Response.json({
+      success: true,
+      invitation_link: 'https://cms.example/auth/accept-invitation?token=secret-token',
+      user: {
+        id: 'invitee-1',
+        email: 'volunteer@example.com',
+        first_name: 'Taylor',
+        last_name: 'Volunteer',
+      },
+    }))
+    const response = await createCmsRequestHandler(appFetch)(
+      new Request('https://cms.example/admin/invite-user', { method: 'POST' }),
+      {
+        ...cmsEnv(),
+        EMAIL: email,
+        INVITE_FROM_EMAIL: 'volunteers@macon170.com',
+        INVITE_FROM_NAME: 'Pack 170 Volunteers',
+        INVITE_REPLY_TO: 'contact@macon170.com',
+      } as unknown as Bindings,
+      executionContext,
+    )
+
+    expect(email.send).toHaveBeenCalledWith(expect.objectContaining({
+      from: { email: 'volunteers@macon170.com', name: 'Pack 170 Volunteers' },
+      to: { email: 'volunteer@example.com', name: 'Taylor Volunteer' },
+      replyTo: 'contact@macon170.com',
+      subject: 'Set up your Pack 170 CMS account',
+      text: expect.stringContaining('token=secret-token'),
+    }))
+    await expect(response.json()).resolves.toEqual({
+      success: true,
+      message: 'Invitation email sent. The setup link expires in seven days.',
+      user: { id: 'invitee-1', email: 'volunteer@example.com' },
+    })
+  })
+
+  it('does not expose an invitation link when email delivery fails', async () => {
+    const email = { send: vi.fn().mockRejectedValue(new Error('Sender is not verified')) }
+    const appFetch = vi.fn().mockResolvedValue(Response.json({
+      success: true,
+      invitation_link: 'https://cms.example/auth/accept-invitation?token=secret-token',
+      user: { id: 'invitee-1', email: 'volunteer@example.com' },
+    }))
+    const response = await createCmsRequestHandler(appFetch)(
+      new Request('https://cms.example/admin/invite-user', { method: 'POST' }),
+      {
+        ...cmsEnv(),
+        EMAIL: email,
+        INVITE_FROM_EMAIL: 'volunteers@macon170.com',
+      } as unknown as Bindings,
+      executionContext,
+    )
+
+    expect(response.status).toBe(502)
+    const body = await response.json() as Record<string, unknown>
+    expect(body).toMatchObject({
+      error: 'invite_delivery_failed',
+      invitationId: 'invitee-1',
+    })
+    expect(JSON.stringify(body)).not.toContain('secret-token')
+  })
+
+  it('protects the volunteer invitation page with active CMS admin access', async () => {
+    const handleRequest = createCmsRequestHandler(vi.fn())
+    const anonymous = await handleRequest(
+      new Request('https://cms.example/admin/users/invite'),
+      cmsEnv(),
+      executionContext,
+    )
+    expect(anonymous.status).toBe(302)
+    expect(anonymous.headers.get('Location')).toBe(
+      'https://cms.example/auth/login?returnTo=%2Fadmin%2Fusers%2Finvite',
+    )
+
+    const token = await AuthManager.generateToken(
+      'admin-1',
+      'admin@example.test',
+      'admin',
+      'test-secret-that-is-not-used-in-production',
+    )
+    const db = {
+      prepare: () => ({
+        bind() { return this },
+        first: async () => ({ id: 'admin-1' }),
+      }),
+    }
+    const response = await handleRequest(
+      new Request('https://cms.example/admin/users/invite', {
+        headers: { Cookie: `auth_token=${token}` },
+      }),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+    expect(response.status).toBe(200)
+    await expect(response.text()).resolves.toContain('Invite a volunteer')
+  })
+
   it('exposes the deployed version without caching', async () => {
     const handleRequest = createCmsRequestHandler(vi.fn())
 
