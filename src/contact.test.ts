@@ -43,9 +43,10 @@ function contactEnv(
               options.formExists === false
                 ? null
                 : {
-                    id: "default-contact-form",
-                    name: "contact",
-                    display_name: "Pack 170 parent contact form",
+                  id: "default-contact-form",
+                  name: "contact",
+                  display_name: "Pack 170 parent contact form",
+                  collection_id: "col-form-contact-test",
                   }
             ) as T | null;
           }
@@ -433,6 +434,7 @@ describe("contact persistence and redirects", () => {
     expect(batches[0][1].sql).toContain("INSERT INTO form_submissions");
     expect(batches[0][2].sql).toContain("SET submission_count");
     expect(batches[0][0].values).toContain(result.contentId);
+    expect(batches[0][0].values).toContain("col-form-contact-test");
     expect(batches[0][1].values).toContain(result.contentId);
     expect(batches[0][2].values).toEqual([
       expect.any(Number),

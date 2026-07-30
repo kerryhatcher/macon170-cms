@@ -38,38 +38,6 @@ try {
   await run([...base, "--config", "wrangler.jsonc"]);
   await run([...base, "--config", "wrangler.custom-migrations.jsonc"]);
 
-  // Reproduce the early-production state: the original contact migration was
-  // ledgered without its form-backed collection. The repair must restore that
-  // dependency before the Worker can insert a linked content record.
-  await run([
-    "bunx",
-    "wrangler",
-    "d1",
-    "execute",
-    "macon170-cms",
-    "--local",
-    "--persist-to",
-    persistTo,
-    "--config",
-    "wrangler.jsonc",
-    "--command",
-    "DELETE FROM collections WHERE id = 'collection-form-contact'",
-  ]);
-  await run([
-    "bunx",
-    "wrangler",
-    "d1",
-    "execute",
-    "macon170-cms",
-    "--local",
-    "--persist-to",
-    persistTo,
-    "--config",
-    "wrangler.custom-migrations.jsonc",
-    "--file",
-    "migrations/custom/0003_repair_contact_collection.sql",
-  ]);
-
   // Re-applying the tracked custom migrations must be a no-op, not a duplicate
   // ALTER/INSERT failure.
   await run([...base, "--config", "wrangler.custom-migrations.jsonc"]);
@@ -94,7 +62,7 @@ try {
        json_array_length(json_extract(forms.formio_schema, '$.components')) AS component_count,
        forms.turnstile_enabled,
        json_extract(forms.turnstile_settings, '$.inherit') AS inherits_turnstile,
-       collections.id AS collection_id,
+       collections.name AS collection_name,
        (SELECT COUNT(*) FROM pragma_table_info('form_submissions')
         WHERE name IN ('source_path', 'country_code', 'last_viewed_at')) AS contact_columns,
        (SELECT COUNT(*) FROM sqlite_master
@@ -121,7 +89,7 @@ try {
     component_count: 8,
     turnstile_enabled: 0,
     inherits_turnstile: 0,
-    collection_id: "collection-form-contact",
+    collection_name: "form_contact",
     contact_columns: 3,
     audit_table: 1,
     retention_trigger: 1,

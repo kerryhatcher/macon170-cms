@@ -9,7 +9,6 @@ export const LEGACY_CONTACT_QUEUE_PATH =
 export const CONTACT_API_BASE = "/api/contact-admin/v1/submissions";
 export const CONTACT_RETENTION_DAYS = 365;
 
-const CONTACT_COLLECTION_ID = "collection-form-contact";
 const SYSTEM_FORM_USER_ID = "system-form-submission";
 const MAX_FORM_BYTES = 24_000;
 const PAGE_SIZE = 25;
@@ -82,6 +81,7 @@ type FormRow = {
   id: string;
   name: string;
   display_name: string;
+  collection_id: string;
 };
 
 type SubmissionRow = {
@@ -216,7 +216,7 @@ export async function handleContactSubmission(
          ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)`,
       ).bind(
         contentId,
-        CONTACT_COLLECTION_ID,
+        form.collection_id,
         `submission-${submissionId}`,
         input.parentName,
         contentData,
@@ -497,8 +497,14 @@ export async function runContactRetention(env: ContactBindings): Promise<void> {
 async function findContactForm(db: D1Database): Promise<FormRow | null> {
   return db
     .prepare(
-      `SELECT id, name, display_name FROM forms
-       WHERE id = ? AND name = ? AND is_active = 1 AND is_public = 1`,
+      `SELECT forms.id, forms.name, forms.display_name,
+              collections.id AS collection_id
+       FROM forms
+       JOIN collections
+         ON collections.source_type = 'form'
+        AND collections.source_id = forms.id
+       WHERE forms.id = ? AND forms.name = ?
+         AND forms.is_active = 1 AND forms.is_public = 1`,
     )
     .bind(CONTACT_FORM_ID, CONTACT_FORM_NAME)
     .first<FormRow>();
