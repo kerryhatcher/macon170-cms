@@ -64,6 +64,9 @@ jobs:
         run: bun run test:smoke
         env:
           EXPECTED_VERSION: ${{ github.sha }}
+          # Custom-domain propagation exceeded the previous ~25-second window.
+          # Keep checking the exact SHA for up to roughly two minutes.
+          VERSION_MAX_ATTEMPTS: "15"
       - name: Verify public roster API
         run: |
           curl --fail-with-body --silent --show-error \
