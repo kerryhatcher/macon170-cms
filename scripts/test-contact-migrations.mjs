@@ -38,6 +38,38 @@ try {
   await run([...base, "--config", "wrangler.jsonc"]);
   await run([...base, "--config", "wrangler.custom-migrations.jsonc"]);
 
+  // Reproduce the early-production state: the original contact migration was
+  // ledgered without its form-backed collection. The repair must restore that
+  // dependency before the Worker can insert a linked content record.
+  await run([
+    "bunx",
+    "wrangler",
+    "d1",
+    "execute",
+    "macon170-cms",
+    "--local",
+    "--persist-to",
+    persistTo,
+    "--config",
+    "wrangler.jsonc",
+    "--command",
+    "DELETE FROM collections WHERE id = 'collection-form-contact'",
+  ]);
+  await run([
+    "bunx",
+    "wrangler",
+    "d1",
+    "execute",
+    "macon170-cms",
+    "--local",
+    "--persist-to",
+    persistTo,
+    "--config",
+    "wrangler.custom-migrations.jsonc",
+    "--file",
+    "migrations/custom/0003_repair_contact_collection.sql",
+  ]);
+
   // Re-applying the tracked custom migrations must be a no-op, not a duplicate
   // ALTER/INSERT failure.
   await run([...base, "--config", "wrangler.custom-migrations.jsonc"]);
