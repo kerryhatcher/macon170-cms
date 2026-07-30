@@ -19,11 +19,13 @@ type Prepared = {
   run: () => Promise<{ success: boolean }>;
 };
 
-function contactEnv(options: {
-  rateLimitSuccess?: boolean;
-  formExists?: boolean;
-  secret?: string;
-} = {}) {
+function contactEnv(
+  options: {
+    rateLimitSuccess?: boolean;
+    formExists?: boolean;
+    secret?: string;
+  } = {},
+) {
   const prepared: Prepared[] = [];
   const batches: Prepared[][] = [];
   const db = {
@@ -37,13 +39,15 @@ function contactEnv(options: {
         },
         async first<T>() {
           if (sql.includes("FROM forms")) {
-            return (options.formExists === false
-              ? null
-              : {
-                  id: "default-contact-form",
-                  name: "contact",
-                  display_name: "Pack 170 parent contact form",
-                }) as T | null;
+            return (
+              options.formExists === false
+                ? null
+                : {
+                    id: "default-contact-form",
+                    name: "contact",
+                    display_name: "Pack 170 parent contact form",
+                  }
+            ) as T | null;
           }
           return null;
         },
@@ -100,14 +104,11 @@ function jsonRequest(
   payload: Record<string, unknown>,
   origin = "https://www.macon170.com",
 ) {
-  return new Request(
-    "https://cms.macon170.com/api/forms/contact/submit",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Origin: origin },
-      body: JSON.stringify({ data: payload }),
-    },
-  );
+  return new Request("https://cms.macon170.com/api/forms/contact/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: origin },
+    body: JSON.stringify({ data: payload }),
+  });
 }
 
 const successfulTurnstile = vi.fn<typeof fetch>(async () =>
@@ -146,9 +147,7 @@ describe("contact validation", () => {
     [{ message: "short" }, "Question"],
     [{ message: "x".repeat(4_001) }, "too long"],
   ])("rejects a validation boundary: %o", (override, message) => {
-    expect(() => validateContactInput(validPayload(override))).toThrow(
-      message,
-    );
+    expect(() => validateContactInput(validPayload(override))).toThrow(message);
   });
 
   it("rejects an actual body larger than 24 KB", async () => {
@@ -169,13 +168,10 @@ describe("contact origin, honeypot, and rate limiting", () => {
   it("returns CORS headers for the configured preflight origin", async () => {
     const { env } = contactEnv();
     const response = await handleContactSubmission(
-      new Request(
-        "https://cms.macon170.com/api/forms/contact/submit",
-        {
-          method: "OPTIONS",
-          headers: { Origin: "https://www.macon170.com" },
-        },
-      ),
+      new Request("https://cms.macon170.com/api/forms/contact/submit", {
+        method: "OPTIONS",
+        headers: { Origin: "https://www.macon170.com" },
+      }),
       env,
       successfulTurnstile,
     );
@@ -191,14 +187,11 @@ describe("contact origin, honeypot, and rate limiting", () => {
   it("rejects an unconfigured preflight without redirecting", async () => {
     const { env, batches } = contactEnv();
     const response = await handleContactSubmission(
-      new Request(
-        "https://cms.macon170.com/api/forms/contact/submit",
-        {
-          method: "OPTIONS",
-          headers: { Origin: "https://attacker.example" },
-          redirect: "manual",
-        },
-      ),
+      new Request("https://cms.macon170.com/api/forms/contact/submit", {
+        method: "OPTIONS",
+        headers: { Origin: "https://attacker.example" },
+        redirect: "manual",
+      }),
       env,
       successfulTurnstile,
     );
@@ -265,6 +258,35 @@ describe("Turnstile enforcement", () => {
     );
     expect(response.status).toBe(400);
     expect(batches).toHaveLength(0);
+  });
+
+  it("retries one transient Siteverify failure with the same request", async () => {
+    const { env, batches } = contactEnv();
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          success: true,
+          hostname: "www.macon170.com",
+          action: "turnstile-spin-v2",
+        }),
+      );
+
+    const response = await handleContactSubmission(
+      jsonRequest(validPayload()),
+      env,
+      fetchImpl,
+    );
+
+    expect(response.status).toBe(201);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const firstPayload = fetchImpl.mock.calls[0]?.[1]?.body as FormData;
+    const secondPayload = fetchImpl.mock.calls[1]?.[1]?.body as FormData;
+    expect(firstPayload.get("idempotency_key")).toBe(
+      secondPayload.get("idempotency_key"),
+    );
+    expect(batches).toHaveLength(1);
   });
 
   it.each([
@@ -421,20 +443,15 @@ describe("contact persistence and redirects", () => {
   it("redirects browser submissions to the branded success and error states", async () => {
     const { env } = contactEnv();
     const success = await handleContactSubmission(
-      new Request(
-        "https://cms.macon170.com/api/forms/contact/submit",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            Origin: "https://www.macon170.com",
-          },
-          body: new URLSearchParams(
-            validPayload() as Record<string, string>,
-          ),
-          redirect: "manual",
+      new Request("https://cms.macon170.com/api/forms/contact/submit", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Origin: "https://www.macon170.com",
         },
-      ),
+        body: new URLSearchParams(validPayload() as Record<string, string>),
+        redirect: "manual",
+      }),
       env,
       successfulTurnstile,
     );
@@ -444,18 +461,15 @@ describe("contact persistence and redirects", () => {
     );
 
     const failure = await handleContactSubmission(
-      new Request(
-        "https://cms.macon170.com/api/forms/contact/submit",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            Origin: "https://www.macon170.com",
-          },
-          body: new URLSearchParams({ parentName: "J" }),
-          redirect: "manual",
+      new Request("https://cms.macon170.com/api/forms/contact/submit", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Origin: "https://www.macon170.com",
         },
-      ),
+        body: new URLSearchParams({ parentName: "J" }),
+        redirect: "manual",
+      }),
       env,
       successfulTurnstile,
     );
@@ -606,9 +620,7 @@ describe("contact queue persistence", () => {
         statusLabel: label,
       });
       expect(batches[0][1].sql).toContain("contact_submission_audit");
-      expect(batches[0][1].values).toContain(
-        `pending -> ${status}`,
-      );
+      expect(batches[0][1].values).toContain(`pending -> ${status}`);
       expect(batches[0][2].values).toContain(contentStatus);
     },
   );

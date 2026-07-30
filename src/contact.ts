@@ -3,8 +3,7 @@ import type { Bindings } from "@sonicjs-cms/core";
 export const CONTACT_FORM_ID = "default-contact-form";
 export const CONTACT_FORM_NAME = "contact";
 export const CONTACT_FORM_VERSION = "pack-contact-v1";
-export const CONTACT_QUEUE_PATH =
-  "/admin/contact-form";
+export const CONTACT_QUEUE_PATH = "/admin/contact-form";
 export const CONTACT_API_BASE = "/api/contact-admin/v1/submissions";
 export const CONTACT_RETENTION_DAYS = 365;
 
@@ -99,11 +98,7 @@ export class ContactRequestError extends Error {
   constructor(
     public readonly status: number,
     public readonly code:
-      | "validation"
-      | "rate_limit"
-      | "security"
-      | "temporary"
-      | "not_found",
+      "validation" | "rate_limit" | "security" | "temporary" | "not_found",
     message: string,
   ) {
     super(message);
@@ -151,11 +146,7 @@ export async function handleContactSubmission(
     if (request.method !== "POST") {
       return contactErrorResponse(
         request,
-        new ContactRequestError(
-          405,
-          "validation",
-          "Method not allowed.",
-        ),
+        new ContactRequestError(405, "validation", "Method not allowed."),
         allowedOrigin,
       );
     }
@@ -173,10 +164,7 @@ export async function handleContactSubmission(
     }
 
     const input = validateContactInput(raw);
-    const token = clean(
-      raw["cf-turnstile-response"] ?? raw.turnstile,
-      2_048,
-    );
+    const token = clean(raw["cf-turnstile-response"] ?? raw.turnstile, 2_048);
     if (!token) {
       throw new ContactRequestError(
         400,
@@ -210,10 +198,8 @@ export async function handleContactSubmission(
     const contentId = crypto.randomUUID();
     const now = Date.now();
     const submissionData = JSON.stringify(input);
-    const countryCode = truncate(
-      request.headers.get("CF-IPCountry"),
-      2,
-    )?.toUpperCase() ?? null;
+    const countryCode =
+      truncate(request.headers.get("CF-IPCountry"), 2)?.toUpperCase() ?? null;
     const sourcePath = "/contact/";
     const contentData = JSON.stringify({
       title: input.parentName,
@@ -325,20 +311,10 @@ export function validateContactInput(
     );
   }
   if (!(ALLOWED_TOPICS as readonly string[]).includes(topic)) {
-    throw new ContactRequestError(
-      400,
-      "validation",
-      "Choose a valid topic.",
-    );
+    throw new ContactRequestError(400, "validation", "Choose a valid topic.");
   }
-  if (
-    !(ALLOWED_GRADES as readonly string[]).includes(childGrade ?? "")
-  ) {
-    throw new ContactRequestError(
-      400,
-      "validation",
-      "Choose a valid grade.",
-    );
+  if (!(ALLOWED_GRADES as readonly string[]).includes(childGrade ?? "")) {
+    throw new ContactRequestError(400, "validation", "Choose a valid grade.");
   }
 
   return { parentName, email, phone, childGrade, topic, message };
@@ -452,14 +428,7 @@ export async function updateContactSubmission(
        SET status = ?, is_spam = ?, reviewed_by = ?, reviewed_at = ?,
            updated_at = ?
        WHERE id = ?`,
-    ).bind(
-      nextStatus,
-      nextStatus === "spam" ? 1 : 0,
-      actorId,
-      now,
-      now,
-      id,
-    ),
+    ).bind(nextStatus, nextStatus === "spam" ? 1 : 0, actorId, now, now, id),
     env.DB.prepare(
       `INSERT INTO contact_submission_audit
        (id, submission_id, actor_id, action, detail, created_at)
@@ -476,7 +445,11 @@ export async function updateContactSubmission(
     statements.push(
       env.DB.prepare(
         "UPDATE content SET status = ?, updated_at = ? WHERE id = ?",
-      ).bind(nextStatus === "spam" ? "archived" : "draft", now, current.content_id),
+      ).bind(
+        nextStatus === "spam" ? "archived" : "draft",
+        now,
+        current.content_id,
+      ),
     );
   }
   await env.DB.batch(statements);
@@ -487,9 +460,7 @@ export async function updateContactSubmission(
   });
 }
 
-export async function runContactRetention(
-  env: ContactBindings,
-): Promise<void> {
+export async function runContactRetention(env: ContactBindings): Promise<void> {
   const cutoff = Date.now() - CONTACT_RETENTION_DAYS * 24 * 60 * 60 * 1_000;
   const results = await env.DB.batch([
     env.DB.prepare(
@@ -503,15 +474,13 @@ export async function runContactRetention(
       `DELETE FROM form_submissions
        WHERE form_id = ? AND submitted_at < ?`,
     ).bind(CONTACT_FORM_ID, cutoff),
-    env.DB
-      .prepare(
+    env.DB.prepare(
       `UPDATE forms
        SET submission_count = (
          SELECT COUNT(*) FROM form_submissions WHERE form_id = ?
        ), updated_at = ?
        WHERE id = ?`,
-      )
-      .bind(CONTACT_FORM_ID, Date.now(), CONTACT_FORM_ID),
+    ).bind(CONTACT_FORM_ID, Date.now(), CONTACT_FORM_ID),
   ]);
 
   console.log(
@@ -549,24 +518,33 @@ async function verifyTurnstile(
   const payload = new FormData();
   payload.set("secret", env.TURNSTILE_SECRET);
   payload.set("response", token);
+  // Reuse this key if Cloudflare's verification endpoint has a brief outage.
+  // A retry must not turn one parent submission into two verification attempts
+  // with different idempotency identities.
   payload.set("idempotency_key", crypto.randomUUID());
   const ip = request.headers.get("CF-Connecting-IP");
   if (ip) payload.set("remoteip", ip);
 
-  let response: Response;
-  try {
-    response = await fetchImpl(
-      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-      { method: "POST", body: payload },
-    );
-  } catch {
-    throw new ContactRequestError(
-      503,
-      "temporary",
-      "The security check is temporarily unavailable.",
-    );
+  let response: Response | null = null;
+  // A parent-facing form should tolerate one transient Siteverify transport or
+  // 5xx failure. Do not retry a completed response: an invalid token must still
+  // receive the normal security error immediately.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const candidate = await fetchImpl(
+        "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+        { method: "POST", body: payload },
+      );
+      if (candidate.ok) {
+        response = candidate;
+        break;
+      }
+    } catch {
+      // Retry once below; the final failure is deliberately reported without
+      // exposing infrastructure details to a parent.
+    }
   }
-  if (!response.ok) {
+  if (!response) {
     throw new ContactRequestError(
       503,
       "temporary",
@@ -612,8 +590,7 @@ async function verifyTurnstile(
         "The security check was issued for a different website.",
       );
     }
-    const expectedAction =
-      env.TURNSTILE_EXPECTED_ACTION ?? "turnstile-spin-v2";
+    const expectedAction = env.TURNSTILE_EXPECTED_ACTION ?? "turnstile-spin-v2";
     if (!result.action || result.action !== expectedAction) {
       throw new ContactRequestError(
         400,
@@ -628,9 +605,7 @@ async function readContactBody(
   request: Request,
 ): Promise<Record<string, unknown>> {
   const bytes = await readBoundedBody(request, MAX_FORM_BYTES);
-  const contentType = (
-    request.headers.get("Content-Type") ?? ""
-  ).toLowerCase();
+  const contentType = (request.headers.get("Content-Type") ?? "").toLowerCase();
   if (contentType.includes("application/json")) {
     try {
       const value = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
@@ -684,11 +659,7 @@ async function readBoundedBody(
     }
   }
   if (!request.body) {
-    throw new ContactRequestError(
-      400,
-      "validation",
-      "The form was empty.",
-    );
+    throw new ContactRequestError(400, "validation", "The form was empty.");
   }
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -767,11 +738,7 @@ function required(
 ): string {
   const result = clean(value, maximum);
   if (result.length < minimum) {
-    throw new ContactRequestError(
-      400,
-      "validation",
-      `${label} is required.`,
-    );
+    throw new ContactRequestError(400, "validation", `${label} is required.`);
   }
   return result;
 }
@@ -804,8 +771,7 @@ function truncate(value: string | null, maximum: number): string | null {
 }
 
 function parseStatus(value: string | null): ContactStatus | null {
-  return value &&
-    (CONTACT_STATUSES as readonly string[]).includes(value)
+  return value && (CONTACT_STATUSES as readonly string[]).includes(value)
     ? (value as ContactStatus)
     : null;
 }
@@ -884,11 +850,7 @@ function adminJson(value: unknown, status = 200): Response {
   });
 }
 
-function adminError(
-  status: number,
-  code: string,
-  message: string,
-): Response {
+function adminError(status: number, code: string, message: string): Response {
   return adminJson({ error: { code, message } }, status);
 }
 
@@ -897,8 +859,7 @@ async function stableHash(value: string): Promise<string> {
     "SHA-256",
     new TextEncoder().encode(value),
   );
-  return Array.from(
-    new Uint8Array(digest),
-    (byte) => byte.toString(16).padStart(2, "0"),
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
   ).join("");
 }
