@@ -19,3 +19,7 @@ the form `type(optional-scope): description`, such as
 `docs(agents): add worktree guidance`. Use `feat` for new features and `fix`
 for bug fixes; indicate breaking changes with `!` before the colon or an
 uppercase `BREAKING CHANGE:` footer.
+
+After installing dependencies in a fresh checkout, run `pre-commit install`.
+Confirm it has installed the configured `pre-commit`, `commit-msg`, and
+`pre-push` hooks before making commits or pushes.
