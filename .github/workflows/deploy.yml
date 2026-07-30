@@ -57,7 +57,11 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy --config wrangler.jsonc
+          command: deploy --config wrangler.jsonc --var APP_VERSION:${{ github.sha }}
+      - name: Wait for deployed version and verify calendar
+        run: bun run test:smoke:calendar
+        env:
+          EXPECTED_VERSION: ${{ github.sha }}
       - name: Verify public roster API
         run: |
           curl --fail-with-body --silent --show-error \
@@ -66,5 +70,3 @@ jobs:
             https://cms.macon170.com/api/collections/leadership-roster/content > /tmp/cms-roster.json
           grep --ignore-case --quiet '^access-control-allow-origin: https://www.macon170.com' /tmp/cms-headers
           jq --exit-status 'has("data")' /tmp/cms-roster.json > /dev/null
-      - name: Verify public calendar API and subscription
-        run: bun run test:smoke:calendar

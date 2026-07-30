@@ -67,6 +67,23 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
       return htmlResponse(renderLoginPage(url));
     }
 
+    if (pathname === "/api/version") {
+      if (!["GET", "HEAD"].includes(request.method)) {
+        return errorResponse(405, "method_not_allowed", "Method not allowed.");
+      }
+      const body = JSON.stringify({
+        service: "macon170-cms",
+        version: env.APP_VERSION ?? "unknown",
+        environment: env.ENVIRONMENT ?? "unknown",
+      });
+      return new Response(request.method === "HEAD" ? null : body, {
+        headers: {
+          "Cache-Control": "no-store",
+          "Content-Type": jsonContentType,
+        },
+      });
+    }
+
     if (isPublicCalendarPath(pathname)) {
       return handlePublicCalendarRequest(request, env);
     }

@@ -49,6 +49,7 @@ export type CalendarEventInput = Omit<
 >;
 
 export type CalendarBindings = Bindings & {
+  APP_VERSION?: string;
   JWT_SECRET?: string;
   ENVIRONMENT?: string;
 };
