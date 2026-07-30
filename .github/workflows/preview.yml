@@ -1,0 +1,79 @@
+name: Preview CMS pull request
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  group: cms-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preview:
+    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ACCOUNT_SUBDOMAIN: ${{ vars.CLOUDFLARE_ACCOUNT_SUBDOMAIN }}
+      NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with: { bun-version: latest }
+      - run: bun install --frozen-lockfile
+      - name: Create isolated CMS storage
+        run: |
+          cms_name="macon170-cms-pr-$NUMBER"; db_name="$cms_name"; bucket_name="$cms_name-media"
+          db_json="$(bunx wrangler d1 create "$db_name" --json)"
+          db_id="$(jq -r '.uuid // .result.uuid' <<< "$db_json")"
+          bunx wrangler r2 bucket create "$bucket_name"
+          frontend_url="https://macon170-pr-$NUMBER.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev"
+          # Rate-limit namespaces are caller-chosen account-wide positive integers; this prefix is reserved for previews.
+          bun scripts/preview-config.mjs "$cms_name" "$db_name" "$db_id" "$bucket_name" "$frontend_url" "170$NUMBER"
+          printf '%s' "$(openssl rand -hex 32)" | bunx wrangler secret put JWT_SECRET --config .wrangler.preview.generated.json
+          printf '%s' "1x00000000000000000000AA" | bunx wrangler secret put TURNSTILE_SECRET --config .wrangler.preview.generated.json
+      - name: Deploy and migrate isolated CMS
+        run: |
+          bunx wrangler deploy --config .wrangler.preview.generated.json --var APP_VERSION:${GITHUB_SHA}
+          bunx wrangler d1 migrations apply "macon170-cms-pr-$NUMBER" --remote --config .wrangler.preview.generated.json
+          bunx wrangler d1 migrations apply "macon170-cms-pr-$NUMBER" --remote --config .wrangler.preview.custom.generated.json
+      - name: Deploy paired frontend from its main branch
+        run: |
+          git clone --depth 1 --branch main https://github.com/kerryhatcher/macon170.com.git frontend
+          cd frontend; bun install --frozen-lockfile
+          PUBLIC_CMS_ORIGIN="https://macon170-cms-pr-$NUMBER.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev" PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA bun run build
+          bunx wrangler deploy --config wrangler.preview.jsonc --name "macon170-pr-$NUMBER"
+      - name: Verify isolated integration without external email
+        run: |
+          cms_url="https://macon170-cms-pr-$NUMBER.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev"; frontend_url="https://macon170-pr-$NUMBER.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev"
+          curl --fail-with-body --silent --show-error "$frontend_url/calendar/" | grep --fixed-strings --quiet "$cms_url/api/calendar/v1/calendar.ics"
+          curl --fail-with-body --silent --show-error --header "Origin: $frontend_url" "$cms_url/api/collections/leadership-roster/content" | jq --exit-status 'has("data")' > /dev/null
+          curl --fail-with-body --silent --show-error "$cms_url/api/forms/contact/schema" > /dev/null
+      - name: Comment isolated preview URLs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body "## Isolated CMS preview\n\nCMS: https://macon170-cms-pr-$NUMBER.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev\nFrontend: https://macon170-pr-$NUMBER.$CLOUDFLARE_ACCOUNT_SUBDOMAIN.workers.dev\n\nCMS commit: $GITHUB_SHA; frontend source: macon170.com main. Synthetic preview storage only; invitation email must remain captured-only."
+
+  cleanup:
+    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with: { bun-version: latest }
+      - run: bun install --frozen-lockfile
+      - run: |
+          bunx wrangler delete --config wrangler.preview.jsonc --name "macon170-cms-pr-$NUMBER" || true
+          bunx wrangler delete --config wrangler.preview.jsonc --name "macon170-pr-$NUMBER" || true
+          bunx wrangler r2 bucket delete "macon170-cms-pr-$NUMBER-media" || true
+          bunx wrangler d1 delete "macon170-cms-pr-$NUMBER" || true
