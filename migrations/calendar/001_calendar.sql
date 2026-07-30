@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS calendar_events (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   published_at INTEGER,
+  CHECK (ends_at IS NULL OR ends_at > starts_at),
   CHECK (publication_state != 'published' OR published_at IS NOT NULL)
 );
 

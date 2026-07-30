@@ -222,4 +222,58 @@ describe("calendar persistence", () => {
     ).rejects.toBeInstanceOf(CalendarConflictError);
     expect(db.batch).not.toHaveBeenCalled();
   });
+
+  it("reports concurrent history collisions as revision conflicts, not slug conflicts", async () => {
+    const row = {
+      id: event.id,
+      revision: event.revision,
+      slug: event.slug,
+      publication_state: event.publicationState,
+      event_status: event.eventStatus,
+      category: event.category,
+      title: event.title,
+      summary: event.summary,
+      description: event.description,
+      starts_at: event.startsAt,
+      ends_at: event.endsAt,
+      timezone: event.timezone,
+      location_name: event.locationName,
+      address: event.address,
+      audience: event.audience,
+      what_to_bring: event.whatToBring,
+      cost: event.cost,
+      registration_url: event.registrationUrl,
+      milestone: event.milestone,
+      created_at: Date.parse(event.createdAt),
+      updated_at: Date.parse(event.updatedAt),
+      published_at: Date.parse(event.publishedAt),
+    };
+    const db = {
+      prepare: () => ({
+        bind() {
+          return this;
+        },
+        first: async () => row,
+      }),
+      batch: vi
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            "UNIQUE constraint failed: calendar_event_history.event_id, calendar_event_history.revision",
+          ),
+        ),
+    };
+    await expect(
+      updateCalendarEvent(
+        { DB: db } as unknown as Bindings,
+        event.id,
+        validateCalendarInput(input),
+        event.revision,
+        "admin-1",
+      ),
+    ).rejects.toMatchObject({
+      name: "Error",
+      message: "The event changed since it was loaded.",
+    });
+  });
 });

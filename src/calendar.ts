@@ -459,6 +459,9 @@ async function mutateCalendarEvent(
     }
   } catch (error) {
     if (error instanceof CalendarConflictError) throw error;
+    if (isRevisionConflictError(error)) {
+      throw new CalendarConflictError("The event changed since it was loaded.");
+    }
     if (isUniqueError(error)) {
       throw new CalendarConflictError("Another event already uses that slug.");
     }
@@ -473,7 +476,16 @@ async function mutateCalendarEvent(
 function isUniqueError(error: unknown): boolean {
   return (
     error instanceof Error &&
-    /unique constraint|calendar_events\.slug/i.test(error.message)
+    /unique constraint failed:\s*calendar_events\.slug/i.test(error.message)
+  );
+}
+
+function isRevisionConflictError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /unique constraint failed:\s*calendar_event_history\.event_id\s*,\s*calendar_event_history\.revision/i.test(
+      error.message,
+    )
   );
 }
 
