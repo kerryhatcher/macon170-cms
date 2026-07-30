@@ -2,12 +2,10 @@ import { createSonicJSApp, registerCollections } from '@sonicjs-cms/core'
 import type { Bindings, SonicJSConfig } from '@sonicjs-cms/core'
 
 import leadershipRosterCollection from './collections/leadership-roster.collection'
-import calendarEventCollection from './collections/calendar-event.collection'
 import { createCmsRequestHandler } from './request-handler'
 
 registerCollections([
   leadershipRosterCollection,
-  calendarEventCollection,
 ])
 
 const config: SonicJSConfig = {

@@ -2,7 +2,10 @@
 
 The isolated content-management backend for Pack 170. It runs as the `macon170-cms` Cloudflare Worker at `https://cms.macon170.com` and owns its own D1 database (`macon170-cms`) and R2 media bucket (`macon170-cms-media`). It has no binding to, and makes no changes to, the public site's Worker or database.
 
-Its collections are **Volunteer leadership roster** and **Pack calendar event**. Each roster record is a role; names may be blank for vacant roles. Publish only records approved for display. Calendar migration and cutover procedures are in [docs/calendar-migration.md](docs/calendar-migration.md).
+Its SonicJS collection is the **Volunteer leadership roster**. Calendar events
+use a dedicated, permissioned CMS workflow documented in
+[docs/calendar.md](docs/calendar.md). Each roster record is a role; names may
+be blank for vacant roles. Publish only records approved for display.
 
 ## Getting Started
 
@@ -73,7 +76,8 @@ Its collections are **Volunteer leadership roster** and **Pack calendar event**.
    ```
 
 7. **Open your browser:**
-   Navigate to `http://kudzu:41772/admin` from any computer on the LAN to access the admin interface.
+   Navigate to `http://kudzu:41772/admin` for SonicJS administration or
+   `http://kudzu:41772/admin/calendar` for calendar management.
 
 ## Project Structure
 
@@ -105,6 +109,11 @@ SonicJS owns its user accounts in the CMS D1 database. The public registration a
 
 The roster collection is served by SonicJS at `/api/content/leadership-roster`. Frontend integration is intentionally out of scope for this backend-only phase.
 
+The CMS serves the published calendar at `/api/calendar/v1/events`,
+`/api/calendar/v1/events/:slug`, and `/api/calendar/v1/calendar.ics`. These are
+read-only public endpoints; all calendar writes require SonicJS authentication,
+CSRF protection, and `calendar.manage`.
+
 ## Deployment
 
 1. **Login to Cloudflare:**
@@ -133,8 +142,6 @@ GitHub Actions validates pull requests and deploys only pushes to `main`. Config
 
 The production `JWT_SECRET` stays in the Worker as a Cloudflare secret; ordinary deployments preserve it and do not copy it into GitHub.
 
-```
-
 ## Documentation
 
 - [SonicJS Documentation](https://sonicjs.com)
@@ -151,4 +158,3 @@ The production `JWT_SECRET` stays in the Worker as a Cloudflare secret; ordinary
 ## License
 
 MIT
-```
