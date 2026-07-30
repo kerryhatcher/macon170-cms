@@ -1,0 +1,35 @@
+name: PII scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Install pii-hound
+        env:
+          PII_HOUND_SHA256: 6665acf063d8c9c78773a9c4669fffab04423581790f7bc11963488f2b4de5b8
+        run: |
+          curl --fail --location --silent --show-error \
+            --output "$RUNNER_TEMP/pii-hound.tar.gz" \
+            https://github.com/saddledata/pii-hound/releases/download/v0.1.9/pii-hound_Linux_x86_64.tar.gz
+          echo "$PII_HOUND_SHA256  $RUNNER_TEMP/pii-hound.tar.gz" | sha256sum --check --status
+          mkdir --parents "$RUNNER_TEMP/pii-hound"
+          tar --extract --gzip --file "$RUNNER_TEMP/pii-hound.tar.gz" --directory "$RUNNER_TEMP/pii-hound"
+          echo "$RUNNER_TEMP/pii-hound" >> "$GITHUB_PATH"
+      - name: Scan pull-request changes for PII
+        if: github.event_name == 'pull_request'
+        run: pii-hound scan --diff --base "${{ github.event.pull_request.base.sha }}" --fail-on-pii
+      - name: Scan main changes for PII
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        run: pii-hound scan --diff --base "${{ github.event.before }}" --fail-on-pii

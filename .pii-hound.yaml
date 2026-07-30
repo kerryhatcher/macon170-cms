@@ -1,0 +1,6 @@
+fail_on_pii: true
+
+# Wrangler's development bind address is configuration, not personal data.
+ignore:
+  - source: "package.json"
+    type: "IP Address"

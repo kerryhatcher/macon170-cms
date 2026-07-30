@@ -16,6 +16,10 @@ function notice(message: string | null, kind: 'error' | 'message'): string {
 export function renderLoginPage(url: URL): string {
   const error = url.searchParams.get('error')
   const message = url.searchParams.get('message')
+  const returnTo = url.searchParams.get('returnTo') === '/admin/calendar'
+    ? '/admin/calendar'
+    : '/admin/dashboard'
+  const returnToJson = JSON.stringify(returnTo).replaceAll('<', '\\u003c')
 
   return `<!doctype html>
 <html lang="en">
@@ -98,7 +102,7 @@ export function renderLoginPage(url: URL): string {
           const responseHtml = await response.text();
           const message = new DOMParser().parseFromString(responseHtml, 'text/html').body.textContent.trim();
           if (message.includes('Login successful')) {
-            window.location.assign('/admin/dashboard');
+            window.location.assign(${returnToJson});
             return;
           }
           const notice = document.createElement('p');

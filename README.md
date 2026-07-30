@@ -2,7 +2,10 @@
 
 The isolated content-management backend for Pack 170. It runs as the `macon170-cms` Cloudflare Worker at `https://cms.macon170.com` and owns its own D1 database (`macon170-cms`) and R2 media bucket (`macon170-cms-media`). It has no binding to, and makes no changes to, the public site's Worker or database.
 
-Its first collection is **Volunteer leadership roster**. Each record is a role; names may be blank for vacant roles. Publish only the records approved for display.
+Its SonicJS collection is the **Volunteer leadership roster**. Calendar events
+use a dedicated, permissioned CMS workflow documented in
+[docs/calendar.md](docs/calendar.md). Each roster record is a role; names may
+be blank for vacant roles. Publish only records approved for display.
 
 ## Getting Started
 
@@ -11,15 +14,22 @@ Its first collection is **Volunteer leadership roster**. Each record is a role; 
 - Node.js 18 or higher
 - A Cloudflare account (free tier works great)
 - Wrangler CLI (installed with dependencies)
+- [pii-hound v0.1.9](https://github.com/saddledata/pii-hound/releases/tag/v0.1.9)
+  on your `PATH`. Download the binary for your platform from that release and
+  verify it against the published `checksums.txt` before installing it. The
+  installed pre-commit hook scans changed files and blocks commits containing
+  detected PII or secrets.
 
 ### Installation
 
 1. **Install dependencies:**
+
    ```bash
    bun install --frozen-lockfile
    ```
 
 2. **Create the CMS D1 database:**
+
    ```bash
    npx wrangler d1 create macon170-cms
    ```
@@ -27,39 +37,43 @@ Its first collection is **Volunteer leadership roster**. Each record is a role; 
    Copy the returned `database_id` into `wrangler.jsonc`.
 
 3. **Create your R2 bucket:**
+
    ```bash
    npx wrangler r2 bucket create macon170-cms-media
    ```
 
-4. **Run migrations:**
-   ```bash
-   bun run db:migrate:local
-   ```
+4. **Configure local-only environment variables:**
 
-5. **Configure local-only environment variables:**
    ```bash
    cp .dev.vars.example .dev.vars
    ```
 
    Replace `JWT_SECRET` in the ignored `.dev.vars` file with a unique local secret. The default
    CORS origins permit the Astro dev server on this computer and the LAN hostname:
+
    ```dotenv
    CORS_ORIGINS=http://localhost:41771,http://kudzu:41771
    ```
+
    The committed Worker configuration permits only `https://www.macon170.com` in production.
 
-6. **Start the development server:**
+5. **Start the development server:**
+
    ```bash
    just run
    ```
 
-   In a second terminal, add the current roster to the local D1 database:
+   This applies all pending local D1 migrations before starting Wrangler, so it
+   is safe to use as the normal development entry point. In a second terminal,
+   add the current roster to the local D1 database:
+
    ```bash
    bun run db:seed:local
    ```
 
 7. **Open your browser:**
-   Navigate to `http://kudzu:41772/admin` from any computer on the LAN to access the admin interface.
+   Navigate to `http://kudzu:41772/admin` for SonicJS administration or
+   `http://kudzu:41772/admin/calendar` for calendar management.
 
 ## Project Structure
 
@@ -76,7 +90,8 @@ cms/
 
 ## Available Scripts
 
-- `bun run dev` - Start development server
+- `just run` - Apply pending local migrations and start the development server
+- `bun run dev` - Start the development server without applying migrations
 - `bun run deploy` - Deploy to Cloudflare
 - `bun run db:migrate` - Run migrations on production database
 - `bun run db:migrate:local` - Run migrations locally
@@ -91,14 +106,21 @@ SonicJS owns its user accounts in the CMS D1 database. The public registration a
 
 The roster collection is served by SonicJS at `/api/content/leadership-roster`. Frontend integration is intentionally out of scope for this backend-only phase.
 
+The CMS serves the published calendar at `/api/calendar/v1/events`,
+`/api/calendar/v1/events/:slug`, and `/api/calendar/v1/calendar.ics`. These are
+read-only public endpoints; all calendar writes require SonicJS authentication,
+CSRF protection, and `calendar.manage`.
+
 ## Deployment
 
 1. **Login to Cloudflare:**
+
    ```bash
    npx wrangler login
    ```
 
 2. **Deploy the CMS Worker:**
+
    ```bash
    bun run deploy
    ```
@@ -106,6 +128,7 @@ The roster collection is served by SonicJS at `/api/content/leadership-roster`. 
 3. **Run the CMS migrations on production:**
    ```bash
    bun run db:migrate
+   ```
 
 ## Continuous delivery
 
@@ -115,7 +138,6 @@ GitHub Actions validates pull requests and deploys only pushes to `main`. Config
 - `CLOUDFLARE_ACCOUNT_ID` — Pack 170 Cloudflare account ID
 
 The production `JWT_SECRET` stays in the Worker as a Cloudflare secret; ordinary deployments preserve it and do not copy it into GitHub.
-   ```
 
 ## Documentation
 
