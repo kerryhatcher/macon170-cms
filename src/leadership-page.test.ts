@@ -14,4 +14,14 @@ describe("renderLeadershipPage", () => {
       expect(() => new Function(script)).not.toThrow();
     }
   });
+
+  it("safely embeds the CSRF token and preserves vacant names as strings", () => {
+    const page = renderLeadershipPage("</script><script>alert(1)</script>");
+
+    expect(page).toContain("\\u003c/script>");
+    expect(page).not.toContain("const CSRF=</script>");
+    expect(page).toContain('name:document.querySelector("#field-name").value');
+    expect(page).not.toContain('name:document.querySelector("#field-name").value||null');
+    expect(page).toContain("'\"':\"&quot;\"");
+  });
 });

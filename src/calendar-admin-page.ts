@@ -208,7 +208,7 @@ ${renderAdminHeader("calendar")}
     document.querySelector('#new-event').addEventListener('click', () => edit(null));
     load().catch((error) => showNotice(error.message, 'error'));
   </script>
-  ${renderAdminHeaderScript()}
+  <script>${renderAdminHeaderScript()}</script>
 </body>
 </html>`;
 }

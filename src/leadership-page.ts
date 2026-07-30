@@ -5,6 +5,7 @@ import {
 } from "./admin-header";
 
 export function renderLeadershipPage(csrfToken: string): string {
+  const token = JSON.stringify(csrfToken).replaceAll("<", "\\u003c");
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -131,12 +132,12 @@ ${renderAdminHeader("leadership")}
 </div>
 
 <script>
-const CSRF=${JSON.stringify(csrfToken)};
+const CSRF=${token};
 const COLLECTION="leadership-roster";
 const API_BASE="/api/content";
 const LIST_API="/api/collections/"+COLLECTION+"/content";
 
-const esc=function(v){return String(v??"").replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;","\\\"":"&quot;","'":"&#039;"})[c]})};
+const esc=function(v){return String(v??"").replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[c]})};
 
 function showNotice(msg,kind){var n=document.querySelector("#notice");n.textContent=msg;n.dataset.visible="true";n.className="notice notice--"+kind;setTimeout(function(){n.dataset.visible="false"},4000)}
 
@@ -158,7 +159,7 @@ document.querySelector("#add-entry").addEventListener("click",function(){documen
 document.querySelector("#modal-cancel").addEventListener("click",closeModal);
 document.querySelector("#delete-cancel").addEventListener("click",closeDelete);
 
-document.querySelector("#entry-form").addEventListener("submit",async function(e){e.preventDefault();var id=document.querySelector("#entry-id").value;var payload={title:document.querySelector("#field-title").value,name:document.querySelector("#field-name").value||null,section:document.querySelector("#field-section").value,sortOrder:parseInt(document.querySelector("#field-sortOrder").value,10)||0};try{if(id){await apiFetch(API_BASE+"/"+id,{method:"PUT",body:JSON.stringify({data:payload})});showNotice("Role updated.","success")}else{await apiFetch(API_BASE+"/",{method:"POST",body:JSON.stringify({collection:COLLECTION,slug:payload.title.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""),title:payload.title,data:payload,status:"published"})});showNotice("Role added.","success")}closeModal();await loadRoster()}catch(err){showNotice("Failed to save: "+err.message,"error")}});
+document.querySelector("#entry-form").addEventListener("submit",async function(e){e.preventDefault();var id=document.querySelector("#entry-id").value;var payload={title:document.querySelector("#field-title").value,name:document.querySelector("#field-name").value,section:document.querySelector("#field-section").value,sortOrder:parseInt(document.querySelector("#field-sortOrder").value,10)||0};try{if(id){await apiFetch(API_BASE+"/"+id,{method:"PUT",body:JSON.stringify({data:payload})});showNotice("Role updated.","success")}else{await apiFetch(API_BASE+"/",{method:"POST",body:JSON.stringify({collection:COLLECTION,slug:payload.title.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""),title:payload.title,data:payload,status:"published"})});showNotice("Role added.","success")}closeModal();await loadRoster()}catch(err){showNotice("Failed to save: "+err.message,"error")}});
 
 document.querySelector("#delete-confirm").addEventListener("click",async function(){var id=document.querySelector("#delete-id").value;if(!id)return;try{await apiFetch(API_BASE+"/"+id,{method:"DELETE"});showNotice("Role deleted.","success");closeDelete();await loadRoster()}catch(err){showNotice("Failed to delete: "+err.message,"error")}});
 

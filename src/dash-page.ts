@@ -78,7 +78,7 @@ ${renderAdminHeader("dash")}
 </main>
 <script>
 ${renderAdminHeaderScript()}
-(async function(){try{const r=await fetch('/api/contact-admin/v1/submissions?page=1&status=pending');if(r.ok){const d=await r.json();const n=document.querySelector('#contact-count');if(n)n.textContent=d.submissions.length+' pending'+(d.submissions.length===1?'':'s')}}catch(e){const n=document.querySelector('#contact-count');if(n)n.textContent='Could not load'}})();
+(async function(){try{const r=await fetch('/api/contact-admin/v1/submissions?page=1&status=pending');if(r.ok){const d=await r.json();const n=document.querySelector('#contact-count');if(n)n.textContent=d.submissions.length+(d.hasMore?'+':'')+' pending'}}catch(e){const n=document.querySelector('#contact-count');if(n)n.textContent='Could not load'}})();
 (async function(){try{const r=await fetch('/api/calendar-admin/v1/events');if(r.ok){const d=await r.json();const n=document.querySelector('#calendar-count');if(n){const p=d.events.filter(function(e){return e.publicationState==='published'}).length;n.textContent=p+' published event'+(p===1?'':'s')}}}catch(e){const n=document.querySelector('#calendar-count');if(n)n.textContent='Could not load'}})();
 </script>
 </body>

@@ -331,6 +331,96 @@ describe('CMS request guard', () => {
     )
   })
 
+  it('redirects the legacy native contact queue and blocks its other methods', async () => {
+    const handleRequest = createCmsRequestHandler(vi.fn())
+    const legacyPath = '/admin/forms/default-contact-form/submissions'
+
+    const redirect = await handleRequest(
+      new Request(`https://cms.macon170.com${legacyPath}`),
+      cmsEnv(),
+      executionContext,
+    )
+    expect(redirect.status).toBe(302)
+    expect(redirect.headers.get('Location')).toBe(
+      'https://cms.macon170.com/admin/contact-form',
+    )
+
+    const rejected = await handleRequest(
+      new Request(`https://cms.macon170.com${legacyPath}`, { method: 'POST' }),
+      cmsEnv(),
+      executionContext,
+    )
+    expect(rejected.status).toBe(404)
+  })
+
+  it('protects the dashboard and leadership editor with CMS admin access', async () => {
+    const handleRequest = createCmsRequestHandler(vi.fn())
+    const anonymousDash = await handleRequest(
+      new Request('https://cms.macon170.com/dash'),
+      cmsEnv(),
+      executionContext,
+    )
+    expect(anonymousDash.status).toBe(302)
+    expect(anonymousDash.headers.get('Location')).toBe(
+      'https://cms.macon170.com/auth/login?returnTo=%2Fdash',
+    )
+
+    const editorToken = await AuthManager.generateToken(
+      'editor-1',
+      'editor@example.test',
+      'editor',
+      'test-secret-that-is-not-used-in-production',
+    )
+    const nonAdminDash = await handleRequest(
+      new Request('https://cms.macon170.com/dash', {
+        headers: { Cookie: `auth_token=${editorToken}` },
+      }),
+      cmsEnv(),
+      executionContext,
+    )
+    expect(nonAdminDash.status).toBe(403)
+
+    const adminToken = await AuthManager.generateToken(
+      'admin-1',
+      'admin@example.test',
+      'admin',
+      'test-secret-that-is-not-used-in-production',
+    )
+    const db = {
+      prepare: () => ({
+        bind() { return this },
+        first: async () => ({ id: 'admin-1' }),
+      }),
+    }
+    const dashboard = await handleRequest(
+      new Request('https://cms.macon170.com/dash', {
+        headers: { Cookie: `auth_token=${adminToken}` },
+      }),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+    expect(dashboard.status).toBe(200)
+    await expect(dashboard.text()).resolves.toContain('Pack 170 CMS')
+
+    const anonymousLeadership = await handleRequest(
+      new Request('https://cms.macon170.com/admin/leadership'),
+      cmsEnv(),
+      executionContext,
+    )
+    expect(anonymousLeadership.headers.get('Location')).toBe(
+      'https://cms.macon170.com/auth/login?returnTo=%2Fadmin%2Fleadership',
+    )
+    const leadership = await handleRequest(
+      new Request('https://cms.macon170.com/admin/leadership', {
+        headers: { Cookie: `auth_token=${adminToken}` },
+      }),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+    expect(leadership.status).toBe(200)
+    expect(leadership.headers.get('Set-Cookie')).toContain('csrf_token=')
+  })
+
   it('retains the public contact schema with configured CORS', async () => {
     const appFetch = vi.fn().mockResolvedValue(
       Response.json({

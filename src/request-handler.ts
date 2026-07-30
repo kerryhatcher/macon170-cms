@@ -27,6 +27,7 @@ import { renderLeadershipPage } from "./leadership-page";
 import {
   CONTACT_API_BASE,
   CONTACT_QUEUE_PATH,
+  LEGACY_CONTACT_QUEUE_PATH,
   ContactRequestError,
   type ContactBindings,
   getContactSubmission,
@@ -125,6 +126,16 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
         `${env.PUBLIC_SITE_ORIGIN ?? "https://www.macon170.com"}/contact/`,
         302,
       );
+    }
+
+    // Keep the native SonicJS submission page private and send existing
+    // bookmarks to the Pack-owned queue, which enforces CMS admin access and
+    // records the Pack audit events.
+    if (pathname === LEGACY_CONTACT_QUEUE_PATH) {
+      if (!['GET', 'HEAD'].includes(request.method)) {
+        return errorResponse(404, 'not_found', 'Not found.')
+      }
+      return Response.redirect(`${url.origin}${CONTACT_QUEUE_PATH}`, 302)
     }
 
     if (pathname === "/dash") {

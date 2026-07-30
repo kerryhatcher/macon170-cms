@@ -1,5 +1,5 @@
 /**
- * Shared admin header rendered by both the contact-form and calendar admin pages.
+ * Shared admin header rendered throughout the Pack CMS workspace.
  * Mirrors the public site's SiteHeader design: deep blue background, gold bottom
  * border, round logo badge, Montserrat nav links, and a mobile hamburger menu.
  */

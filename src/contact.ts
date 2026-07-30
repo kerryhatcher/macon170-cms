@@ -4,6 +4,8 @@ export const CONTACT_FORM_ID = "default-contact-form";
 export const CONTACT_FORM_NAME = "contact";
 export const CONTACT_FORM_VERSION = "pack-contact-v1";
 export const CONTACT_QUEUE_PATH = "/admin/contact-form";
+export const LEGACY_CONTACT_QUEUE_PATH =
+  "/admin/forms/default-contact-form/submissions";
 export const CONTACT_API_BASE = "/api/contact-admin/v1/submissions";
 export const CONTACT_RETENTION_DAYS = 365;
 

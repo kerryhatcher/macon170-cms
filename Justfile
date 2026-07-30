@@ -4,7 +4,7 @@ run: install dev-vars
   bun run dev
 
 install:
-  bun install
+  bun install --frozen-lockfile
 
 dev-vars:
   test -f .dev.vars || cp .dev.vars.example .dev.vars
