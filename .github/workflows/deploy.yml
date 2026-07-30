@@ -25,6 +25,13 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run type-check
       - run: bun run test
+      - name: Validate core and custom migrations
+        run: |
+          migration_state="$(mktemp -d)"
+          bunx wrangler d1 migrations apply macon170-cms --local --persist-to "$migration_state" --config wrangler.jsonc
+          bunx wrangler d1 migrations apply macon170-cms --local --persist-to "$migration_state" --config wrangler.custom-migrations.jsonc
+          bunx wrangler d1 execute macon170-cms --local --persist-to "$migration_state" --config wrangler.jsonc \
+            --command "SELECT 1 FROM calendar_events LIMIT 1"
       - name: Validate Worker bundle
         run: bun run deploy:dry
 
@@ -44,11 +51,7 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - name: Apply CMS D1 migrations
-        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: d1 migrations apply macon170-cms --remote --config wrangler.jsonc
+        run: bun run db:migrate
       - name: Deploy CMS Worker
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
@@ -63,3 +66,5 @@ jobs:
             https://cms.macon170.com/api/collections/leadership-roster/content > /tmp/cms-roster.json
           grep --ignore-case --quiet '^access-control-allow-origin: https://www.macon170.com' /tmp/cms-headers
           jq --exit-status 'has("data")' /tmp/cms-roster.json > /dev/null
+      - name: Verify public calendar API and subscription
+        run: bun run test:smoke:calendar

@@ -71,7 +71,7 @@ be blank for vacant roles. Publish only records approved for display.
    bun run db:seed:local
    ```
 
-7. **Open your browser:**
+6. **Open your browser:**
    Navigate to `http://kudzu:41772/admin` for SonicJS administration or
    `http://kudzu:41772/admin/calendar` for calendar management.
 
@@ -95,6 +95,7 @@ cms/
 - `bun run deploy` - Deploy to Cloudflare
 - `bun run db:migrate` - Run migrations on production database
 - `bun run db:migrate:local` - Run migrations locally
+- `bun run test:smoke:calendar` - Check the deployed calendar JSON, ICS, caching, CORS, and login redirect
 - `bun run type-check` - Check TypeScript types
 - `bun run test` - Run tests
 
@@ -129,6 +130,11 @@ CSRF protection, and `calendar.manage`.
    ```bash
    bun run db:migrate
    ```
+
+Both migration commands apply SonicJS's packaged migrations followed by every
+unapplied Pack-specific migration in `migrations/custom/`. Add future custom
+schema changes there as new, sequentially numbered SQL files; do not edit a
+migration after it has been applied.
 
 ## Continuous delivery
 
