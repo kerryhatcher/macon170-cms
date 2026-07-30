@@ -154,6 +154,16 @@ describe('CMS request guard', () => {
     )
     expect(notModified.status).toBe(304)
     expect(await notModified.text()).toBe('')
+
+    const weakNotModified = await handleRequest(
+      new Request('https://cms.macon170.com/api/calendar/v1/events', {
+        headers: { 'If-None-Match': `W/${etag}` },
+      }),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+    expect(weakNotModified.status).toBe(304)
+    expect(await weakNotModified.text()).toBe('')
   })
 
   it('returns 404 for a draft or missing public event', async () => {
