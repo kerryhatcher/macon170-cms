@@ -42,13 +42,7 @@ be blank for vacant roles. Publish only records approved for display.
    npx wrangler r2 bucket create macon170-cms-media
    ```
 
-4. **Run migrations:**
-
-   ```bash
-   bun run db:migrate:local
-   ```
-
-5. **Configure local-only environment variables:**
+4. **Configure local-only environment variables:**
 
    ```bash
    cp .dev.vars.example .dev.vars
@@ -63,13 +57,15 @@ be blank for vacant roles. Publish only records approved for display.
 
    The committed Worker configuration permits only `https://www.macon170.com` in production.
 
-6. **Start the development server:**
+5. **Start the development server:**
 
    ```bash
    just run
    ```
 
-   In a second terminal, add the current roster to the local D1 database:
+   This applies all pending local D1 migrations before starting Wrangler, so it
+   is safe to use as the normal development entry point. In a second terminal,
+   add the current roster to the local D1 database:
 
    ```bash
    bun run db:seed:local
@@ -94,7 +90,8 @@ cms/
 
 ## Available Scripts
 
-- `bun run dev` - Start development server
+- `just run` - Apply pending local migrations and start the development server
+- `bun run dev` - Start the development server without applying migrations
 - `bun run deploy` - Deploy to Cloudflare
 - `bun run db:migrate` - Run migrations on production database
 - `bun run db:migrate:local` - Run migrations locally

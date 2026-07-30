@@ -1,5 +1,6 @@
-# Local CMS development, available on the LAN at http://kudzu:41772.
+# Apply pending local migrations, then serve the CMS on the LAN.
 run:
+  bun run db:migrate:local
   bun run dev
 
 install:
