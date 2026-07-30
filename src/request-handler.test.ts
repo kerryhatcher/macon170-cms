@@ -5,8 +5,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { configuredCorsOrigins, createCmsRequestHandler } from '../src/request-handler'
 
 const executionContext = {} as ExecutionContext
-const cmsEnv = (origins?: string, db?: unknown) => ({
+const cmsEnv = (origins?: string, db?: unknown, appVersion = 'test-version') => ({
+  APP_VERSION: appVersion,
   CORS_ORIGINS: origins,
+  ENVIRONMENT: 'test',
   JWT_SECRET: 'test-secret-that-is-not-used-in-production',
   DB: db,
 } as unknown as Bindings)
@@ -20,6 +22,36 @@ describe('configuredCorsOrigins', () => {
 })
 
 describe('CMS request guard', () => {
+  it('exposes the deployed version without caching', async () => {
+    const handleRequest = createCmsRequestHandler(vi.fn())
+
+    const response = await handleRequest(
+      new Request('https://cms.example/api/version'),
+      cmsEnv(undefined, undefined, 'abc123'),
+      executionContext,
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    await expect(response.json()).resolves.toEqual({
+      service: 'macon170-cms',
+      version: 'abc123',
+      environment: 'test',
+    })
+  })
+
+  it('supports HEAD requests for the deployed version', async () => {
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request('https://cms.example/api/version', { method: 'HEAD' }),
+      cmsEnv(),
+      executionContext,
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(await response.text()).toBe('')
+  })
+
   it.each(['/auth/seed-admin', '/auth/register', '/auth/register/form'])('returns 404 for %s before the CMS app runs', async (pathname) => {
     const appFetch = vi.fn()
     const handleRequest = createCmsRequestHandler(appFetch)

@@ -112,6 +112,11 @@ The CMS serves the published calendar at `/api/calendar/v1/events`,
 read-only public endpoints; all calendar writes require SonicJS authentication,
 CSRF protection, and `calendar.manage`.
 
+`GET /api/version` exposes the deployed commit in a no-cache JSON response.
+Continuous delivery injects the merge commit SHA, waits until that exact
+version reaches the custom domain, and then runs the calendar smoke suite with
+bounded exponential-backoff retries. Local development reports `development`.
+
 ## Deployment
 
 1. **Login to Cloudflare:**
@@ -144,6 +149,11 @@ GitHub Actions validates pull requests and deploys only pushes to `main`. Config
 - `CLOUDFLARE_ACCOUNT_ID` — Pack 170 Cloudflare account ID
 
 The production `JWT_SECRET` stays in the Worker as a Cloudflare secret; ordinary deployments preserve it and do not copy it into GitHub.
+
+The deployment smoke runner accepts `EXPECTED_VERSION`,
+`VERSION_MAX_ATTEMPTS`, and `SMOKE_MAX_ATTEMPTS`. CI sets the expected version
+to the workflow commit; local smoke runs omit it and test the currently served
+deployment directly.
 
 ## Documentation
 
