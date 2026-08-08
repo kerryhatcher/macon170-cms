@@ -26,6 +26,11 @@
       "name": "CONTACT_RATE_LIMITER",
       "namespace_id": "17004",
       "simple": { "limit": 6, "period": 60 }
+    },
+    {
+      "name": "SIGNUP_RATE_LIMITER",
+      "namespace_id": "17005",
+      "simple": { "limit": 10, "period": 60 }
     }
   ],
   "vars": {

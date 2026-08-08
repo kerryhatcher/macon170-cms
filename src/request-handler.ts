@@ -38,6 +38,11 @@ import {
   updateContactSubmission,
 } from "./contact";
 import { renderLoginPage } from "./login-page";
+import {
+  handlePublicSignupRequest,
+  isPublicSignupPath,
+} from "./signup-public";
+import type { SignupBindings } from "./signups";
 
 type CmsAppFetch = (
   request: Request,
@@ -89,7 +94,7 @@ export function configuredCorsOrigins(env: Bindings): Set<string> {
 
 export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
   return async (request, rawEnv, ctx) => {
-    const env = rawEnv as CalendarBindings & ContactBindings;
+    const env = rawEnv as CalendarBindings & ContactBindings & SignupBindings;
     const url = new URL(request.url);
     const { pathname } = url;
 
@@ -129,6 +134,10 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
 
     if (isPublicCalendarPath(pathname)) {
       return handlePublicCalendarRequest(request, env);
+    }
+
+    if (isPublicSignupPath(pathname)) {
+      return handlePublicSignupRequest(request, env);
     }
 
     if (isContactSubmissionPath(pathname)) {
@@ -291,7 +300,7 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
     }
 
     if (isInvitationDeliveryRequest(request, pathname)) {
-      const inviteEnv = env as InviteEmailBindings;
+      const inviteEnv = env as unknown as InviteEmailBindings;
       if (!inviteEnv.EMAIL || !inviteEnv.INVITE_FROM_EMAIL) {
         return errorResponse(
           503,
@@ -303,7 +312,7 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
 
     const response = await appFetch(request, rawEnv, ctx);
     if (isInvitationDeliveryRequest(request, pathname)) {
-      return deliverInvitationEmail(response, request, pathname, env as InviteEmailBindings);
+      return deliverInvitationEmail(response, request, pathname, env as unknown as InviteEmailBindings);
     }
     const origin = request.headers.get("Origin");
     if (
