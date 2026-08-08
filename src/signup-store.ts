@@ -11,10 +11,10 @@ import type {
   SignupFormDetail,
   SignupFormInput,
   SignupFormState,
+  SignupFormType,
   SignupResponseDetail,
   SignupResponseInput,
   SignupResponseStatus,
-  SignupFormType,
   SignupSlot,
 } from "./signups";
 
@@ -606,14 +606,27 @@ export async function confirmSignupResponse(
   responseId: string,
 ): Promise<void> {
   const now = Date.now();
-  await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE signup_responses
-       SET status = 'confirmed', confirmed_at = ?, updated_at = ?
-       WHERE id = ? AND status = 'unconfirmed'`,
-    ).bind(now, now, responseId),
-    recordSignupAudit(env, "response", responseId, "confirmed", null),
-  ]);
+  // Run the guarded UPDATE alone first and inspect meta.changes, the same
+  // way updateSignupForm guards its revision bump. D1 does not skip later
+  // batch statements when an earlier one affects zero rows, so the audit
+  // insert cannot simply ride along in the same batch: re-confirming an
+  // already-confirmed response would otherwise write a second "confirmed"
+  // audit row for an event that never happened.
+  const update = await env.DB.prepare(
+    `UPDATE signup_responses
+     SET status = 'confirmed', confirmed_at = ?, updated_at = ?
+     WHERE id = ? AND status = 'unconfirmed'`,
+  )
+    .bind(now, now, responseId)
+    .run();
+  if (Number(update.meta?.changes ?? 0) === 0) {
+    // Zero rows changed means the response was already confirmed (or does
+    // not exist) — this is the idempotent already-confirmed path, not a
+    // failure. Task 6 calls this on every token load, so returning quietly
+    // here is intentional; do not turn this into a throw.
+    return;
+  }
+  await recordSignupAudit(env, "response", responseId, "confirmed", null).run();
 }
 
 export async function updateSignupResponse(

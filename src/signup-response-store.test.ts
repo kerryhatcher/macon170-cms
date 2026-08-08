@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  confirmSignupResponse,
   createSignupResponse,
   getResponseByTokenHash,
   updateSignupResponse,
 } from "./signup-store";
-import { SignupSlotFullError, validateSignupResponseInput } from "./signups";
+import {
+  SignupConflictError,
+  SignupSlotFullError,
+  validateSignupResponseInput,
+} from "./signups";
 import type { SignupBindings, SignupFormDetail } from "./signups";
 
 const form: SignupFormDetail = {
@@ -113,6 +118,61 @@ describe("signup response creation", () => {
       ),
     ).rejects.toBeInstanceOf(SignupSlotFullError);
   });
+
+  it("translates a composite-UNIQUE(form_id, email) violation into SignupConflictError", async () => {
+    const batch = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          "D1_ERROR: UNIQUE constraint failed: signup_responses.form_id, signup_responses.email",
+        ),
+      );
+    await expect(
+      createSignupResponse(
+        { DB: dbWithBatch(batch) } as unknown as SignupBindings,
+        form,
+        input,
+        "hash-1",
+        null,
+      ),
+    ).rejects.toBeInstanceOf(SignupConflictError);
+  });
+
+  it("does not let the slot-full and duplicate-email predicates cross-swallow each other", async () => {
+    const slotFullBatch = vi
+      .fn()
+      .mockRejectedValue(new Error("D1_ERROR: signup slot is full"));
+    const slotFullResult = createSignupResponse(
+      { DB: dbWithBatch(slotFullBatch) } as unknown as SignupBindings,
+      form,
+      input,
+      "hash-1",
+      null,
+    );
+    await expect(slotFullResult).rejects.toBeInstanceOf(SignupSlotFullError);
+    await expect(slotFullResult).rejects.not.toBeInstanceOf(
+      SignupConflictError,
+    );
+
+    const duplicateBatch = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          "D1_ERROR: UNIQUE constraint failed: signup_responses.form_id, signup_responses.email",
+        ),
+      );
+    const duplicateResult = createSignupResponse(
+      { DB: dbWithBatch(duplicateBatch) } as unknown as SignupBindings,
+      form,
+      input,
+      "hash-1",
+      null,
+    );
+    await expect(duplicateResult).rejects.toBeInstanceOf(SignupConflictError);
+    await expect(duplicateResult).rejects.not.toBeInstanceOf(
+      SignupSlotFullError,
+    );
+  });
 });
 
 describe("signup response updates", () => {
@@ -127,6 +187,53 @@ describe("signup response updates", () => {
         input,
       ),
     ).rejects.toBeInstanceOf(SignupSlotFullError);
+  });
+});
+
+describe("signup response confirmation", () => {
+  it("writes exactly one audit row when confirming an unconfirmed response", async () => {
+    const statements: string[] = [];
+    const db = {
+      prepare: (sql: string) => {
+        statements.push(sql);
+        return {
+          sql,
+          bind() {
+            return this;
+          },
+          run: async () => ({ meta: { changes: 1 } }),
+          first: async () => null,
+          all: async () => ({ results: [] }),
+        };
+      },
+    };
+    await confirmSignupResponse({ DB: db } as unknown as SignupBindings, "rsp-1");
+    expect(
+      statements.filter((sql) => sql.includes("INSERT INTO signup_audit"))
+        .length,
+    ).toBe(1);
+  });
+
+  it("does not write an audit row when the response is already confirmed", async () => {
+    const statements: string[] = [];
+    const db = {
+      prepare: (sql: string) => {
+        statements.push(sql);
+        return {
+          sql,
+          bind() {
+            return this;
+          },
+          run: async () => ({ meta: { changes: 0 } }),
+          first: async () => null,
+          all: async () => ({ results: [] }),
+        };
+      },
+    };
+    await confirmSignupResponse({ DB: db } as unknown as SignupBindings, "rsp-1");
+    expect(
+      statements.some((sql) => sql.includes("INSERT INTO signup_audit")),
+    ).toBe(false);
   });
 });
 
