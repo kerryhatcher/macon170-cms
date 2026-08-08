@@ -647,6 +647,29 @@ describe("public signup routing", () => {
     expect(response.status).toBe(413);
   });
 
+  it("rejects a body that declares an oversized Content-Length", async () => {
+    // The declared-length fast path, not the byte-length fallback: the body
+    // itself is tiny, so only the header check can produce the 413.
+    const request = new Request(
+      "https://cms.macon170.com/api/signups/v1/forms/lego-derby-food/responses",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: publicOrigin,
+          "Content-Length": String(9_000),
+        },
+        body: JSON.stringify(validSubmission),
+      },
+    );
+    const response = await handlePublicSignupRequest(
+      request,
+      baseEnv(),
+      turnstileOk,
+    );
+    expect(response.status).toBe(413);
+  });
+
   it("answers a CORS preflight for the public site only", async () => {
     const preflight = new Request(
       "https://cms.macon170.com/api/signups/v1/forms/lego-derby-food/responses",
