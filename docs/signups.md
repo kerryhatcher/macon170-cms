@@ -198,3 +198,7 @@ Do not deploy or apply remote migrations until separately approved.
   cookie/token pair.
 - A volunteer reports claims disappeared: the form's item list was edited,
   which cascades claims. Recover the claimed items from `signup_audit`.
+- Resend or a repeat public submission returns 404: the response was deleted
+  between the lookup and the token rotation, so no link was emailed. That is
+  the intended outcome; a link whose hash was never stored could never work.
+  The family can submit the public form again to create a fresh response.
