@@ -172,6 +172,7 @@ describe("signup form updates", () => {
             return firstCalls === 1 ? formRow : { ...formRow, revision: 3 };
           },
           all: async () => ({ results: [] }),
+          run: async () => ({ meta: { changes: 1 } }),
         };
       },
       batch,
@@ -191,5 +192,44 @@ describe("signup form updates", () => {
       true,
     );
     expect(updated.revision).toBe(3);
+  });
+
+  it("rejects a losing racer without touching slots (TOCTOU guard)", async () => {
+    // Two volunteers both read revision 2 and pass the pre-check. The
+    // winner's guarded UPDATE already bumped the row to revision 3, so this
+    // racer's WHERE-guarded UPDATE matches zero rows. That must be detected
+    // from meta.changes before any slot statement runs — otherwise the
+    // unconditional DELETE/INSERT would still fire and destroy the winner's
+    // slots (and, via ON DELETE CASCADE, its claims).
+    const statements: string[] = [];
+    const batch = vi.fn().mockResolvedValue([]);
+    const db = {
+      prepare: (sql: string) => {
+        statements.push(sql);
+        return {
+          sql,
+          bind() {
+            return this;
+          },
+          first: async () => formRow,
+          all: async () => ({ results: [] }),
+          run: async () => ({ meta: { changes: 0 } }),
+        };
+      },
+      batch,
+    };
+    await expect(
+      updateSignupForm(
+        { DB: db } as unknown as SignupBindings,
+        "frm-1",
+        formInput,
+        formRow.revision,
+        "admin-1",
+      ),
+    ).rejects.toBeInstanceOf(SignupConflictError);
+    expect(batch).not.toHaveBeenCalled();
+    expect(statements.some((sql) => sql.includes("DELETE FROM signup_slots"))).toBe(
+      false,
+    );
   });
 });

@@ -106,7 +106,7 @@ export function recordSignupAudit(
   action: string,
   actorId: string | null,
   detail: Record<string, unknown> = {},
-) {
+): D1PreparedStatement {
   return env.DB.prepare(
     `INSERT INTO signup_audit
        (id, entity_type, entity_id, action, actor_id, detail, created_at)
@@ -336,14 +336,20 @@ export async function updateSignupForm(
 
   const now = Date.now();
   try {
-    await env.DB.batch([
-      env.DB.prepare(
-        `UPDATE signup_forms
-         SET revision = revision + 1, slug = ?, event_id = ?, form_type = ?,
-             title = ?, instructions = ?, state = ?, closes_at = ?,
-             updated_at = ?
-         WHERE id = ? AND revision = ?`,
-      ).bind(
+    // Phase 1: the guarded revision bump, alone. Two volunteers can both
+    // pass the pre-check above starting from the same revision; only one of
+    // their WHERE-guarded UPDATEs can actually match a row. Inspecting
+    // meta.changes here — before any slot statement runs — is what stops
+    // the loser from wiping the winner's slots (and, via the ON DELETE
+    // CASCADE on signup_claims.slot_id, the winner's claims).
+    const bump = await env.DB.prepare(
+      `UPDATE signup_forms
+       SET revision = revision + 1, slug = ?, event_id = ?, form_type = ?,
+           title = ?, instructions = ?, state = ?, closes_at = ?,
+           updated_at = ?
+       WHERE id = ? AND revision = ?`,
+    )
+      .bind(
         input.slug,
         input.eventId,
         input.formType,
@@ -354,10 +360,20 @@ export async function updateSignupForm(
         now,
         id,
         expectedRevision,
-      ),
-      // Slots are replaced wholesale. Claims reference slots with ON DELETE
-      // CASCADE, so editing the item list after families have claimed items
-      // clears those claims; the admin page warns before saving.
+      )
+      .run();
+    if (Number(bump.meta?.changes ?? 0) === 0) {
+      throw new SignupConflictError("The signup changed since it was loaded.");
+    }
+
+    // Phase 2: only reached if this call won the revision bump. Slots are
+    // replaced wholesale. Claims reference slots with ON DELETE CASCADE, so
+    // editing the item list after families have claimed items clears those
+    // claims; the admin page warns before saving. Accepted trade-off: if
+    // this second batch fails after phase 1 committed, the form carries the
+    // new revision with the old slot list — a failed edit the volunteer
+    // retries with the fresh revision, not cross-volunteer corruption.
+    await env.DB.batch([
       env.DB.prepare(`DELETE FROM signup_slots WHERE form_id = ?`).bind(id),
       ...slotStatements(env, id, input, now),
       recordSignupAudit(env, "form", id, "updated", actorId, {
@@ -367,6 +383,7 @@ export async function updateSignupForm(
       }),
     ]);
   } catch (error) {
+    if (error instanceof SignupConflictError) throw error;
     if (/UNIQUE constraint failed: signup_forms\.slug/.test(String(error))) {
       throw new SignupConflictError("Another signup already uses that slug.");
     }
