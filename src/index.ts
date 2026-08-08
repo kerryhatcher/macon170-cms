@@ -4,6 +4,8 @@ import type { Bindings, SonicJSConfig } from '@sonicjs-cms/core'
 import leadershipRosterCollection from './collections/leadership-roster.collection'
 import { type ContactBindings, runContactRetention } from './contact'
 import { createCmsRequestHandler } from './request-handler'
+import { runSignupRetention } from './signup-store'
+import type { SignupBindings } from './signups'
 
 registerCollections([
   leadershipRosterCollection,
@@ -35,5 +37,6 @@ export default {
   },
   async scheduled(_controller: ScheduledController, env: Bindings): Promise<void> {
     await runContactRetention(env as ContactBindings)
+    await runSignupRetention(env as SignupBindings)
   },
 }

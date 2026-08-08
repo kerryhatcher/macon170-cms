@@ -1,4 +1,7 @@
 import {
+  SIGNUP_AUDIT_RETENTION_DAYS,
+  SIGNUP_RETENTION_DAYS,
+  SIGNUP_UNCONFIRMED_HOURS,
   SignupConflictError,
   SignupNotFoundError,
   SignupSlotFullError,
@@ -701,4 +704,48 @@ export async function listSignupResponses(
     details.push(rowToResponse(row, await readClaims(env, row.id)));
   }
   return details;
+}
+
+export async function runSignupRetention(env: SignupBindings): Promise<void> {
+  const now = Date.now();
+  const unconfirmedCutoff = now - SIGNUP_UNCONFIRMED_HOURS * 60 * 60 * 1_000;
+  const responseCutoff = now - SIGNUP_RETENTION_DAYS * 24 * 60 * 60 * 1_000;
+  const auditCutoff = now - SIGNUP_AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1_000;
+
+  const results = await env.DB.batch([
+    // Unconfirmed responses expire quickly; their claims cascade, which
+    // releases the slot they were holding.
+    env.DB.prepare(
+      `DELETE FROM signup_responses
+       WHERE status = 'unconfirmed' AND created_at < ?`,
+    ).bind(unconfirmedCutoff),
+    // Retention removes families, never the volunteer's shopping list: forms
+    // and slots survive so next year's coordinator can reuse them.
+    // calendar_events.starts_at/ends_at are ISO 8601 TEXT columns, so this
+    // cutoff must bind an ISO string, not the millisecond number above.
+    env.DB.prepare(
+      `DELETE FROM signup_responses
+       WHERE form_id IN (
+         SELECT signup_forms.id
+           FROM signup_forms
+           JOIN calendar_events ON calendar_events.id = signup_forms.event_id
+          WHERE COALESCE(calendar_events.ends_at, calendar_events.starts_at) < ?
+       )`,
+    ).bind(new Date(responseCutoff).toISOString()),
+    env.DB.prepare(`DELETE FROM signup_audit WHERE created_at < ?`).bind(
+      auditCutoff,
+    ),
+  ]);
+
+  console.log(
+    JSON.stringify({
+      event: "signup_retention_cleanup",
+      unconfirmedHours: SIGNUP_UNCONFIRMED_HOURS,
+      retentionDays: SIGNUP_RETENTION_DAYS,
+      auditRetentionDays: SIGNUP_AUDIT_RETENTION_DAYS,
+      unconfirmedDeleted: results[0]?.meta?.changes ?? 0,
+      agedResponsesDeleted: results[1]?.meta?.changes ?? 0,
+      auditDeleted: results[2]?.meta?.changes ?? 0,
+    }),
+  );
 }
