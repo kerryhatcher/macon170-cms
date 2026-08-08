@@ -74,32 +74,37 @@ CREATE INDEX IF NOT EXISTS idx_signup_claims_response
 
 -- Capacity is enforced in the schema so every write path is protected and an
 -- oversubscribed claim aborts the enclosing D1 batch transaction.
+--
+-- The guard is a bare `SELECT RAISE(...) WHERE <condition>` rather than the more obvious
+-- `SELECT CASE WHEN <condition> THEN RAISE(...) END`. Both abort identically — a false condition
+-- yields zero rows, so RAISE is never evaluated — but a `CASE ... END` inside a trigger body
+-- cannot be applied to a remote D1. `wrangler d1 migrations apply --remote` posts the whole file
+-- to the D1 /query API as one string, and that server-side splitter ends the trigger at the
+-- CASE's `END;`, leaving the trigger's own `END;` as an incomplete statement
+-- (`incomplete input: SQLITE_ERROR [code: 7500]`). A local D1 applies the CASE form fine, so the
+-- migration contract test cannot catch it; scripts/check-migration-sql.mjs is what does.
 CREATE TRIGGER IF NOT EXISTS signup_claims_capacity_insert
 BEFORE INSERT ON signup_claims
 BEGIN
-  SELECT CASE
-    WHEN (
-      SELECT COALESCE(SUM(quantity), 0) FROM signup_claims
-      WHERE slot_id = NEW.slot_id
-    ) + NEW.quantity > (
-      SELECT quantity_needed FROM signup_slots WHERE id = NEW.slot_id
-    )
-    THEN RAISE(ABORT, 'signup slot is full')
-  END;
+  SELECT RAISE(ABORT, 'signup slot is full')
+  WHERE (
+    SELECT COALESCE(SUM(quantity), 0) FROM signup_claims
+    WHERE slot_id = NEW.slot_id
+  ) + NEW.quantity > (
+    SELECT quantity_needed FROM signup_slots WHERE id = NEW.slot_id
+  );
 END;
 
 CREATE TRIGGER IF NOT EXISTS signup_claims_capacity_update
 BEFORE UPDATE ON signup_claims
 BEGIN
-  SELECT CASE
-    WHEN (
-      SELECT COALESCE(SUM(quantity), 0) FROM signup_claims
-      WHERE slot_id = NEW.slot_id AND id != NEW.id
-    ) + NEW.quantity > (
-      SELECT quantity_needed FROM signup_slots WHERE id = NEW.slot_id
-    )
-    THEN RAISE(ABORT, 'signup slot is full')
-  END;
+  SELECT RAISE(ABORT, 'signup slot is full')
+  WHERE (
+    SELECT COALESCE(SUM(quantity), 0) FROM signup_claims
+    WHERE slot_id = NEW.slot_id AND id != NEW.id
+  ) + NEW.quantity > (
+    SELECT quantity_needed FROM signup_slots WHERE id = NEW.slot_id
+  );
 END;
 
 CREATE TABLE IF NOT EXISTS signup_audit (
