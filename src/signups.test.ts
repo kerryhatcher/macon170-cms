@@ -44,6 +44,16 @@ describe("signup form validation", () => {
     expect(result.slots[1]?.notes).toBe("Caffeine free");
   });
 
+  it("keeps the title on one line so it cannot inject into the email subject", () => {
+    const result = validateSignupFormInput({
+      ...formInput,
+      title: "Lego Derby food\r\nBcc: someone@example.com",
+    });
+    expect(result.title).not.toContain("\n");
+    expect(result.title).not.toContain("\r");
+    expect(result.title).toBe("Lego Derby food Bcc: someone@example.com");
+  });
+
   it("rejects a bad slug, unknown type, and unknown state", () => {
     expect(() =>
       validateSignupFormInput({ ...formInput, slug: "Lego Derby" }),

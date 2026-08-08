@@ -66,6 +66,20 @@ describe("signup email delivery", () => {
     expect(message.replyTo).toBe("contact@macon170.com");
   });
 
+  it("omits replyTo entirely when INVITE_REPLY_TO is unset", async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const { INVITE_REPLY_TO, ...withoutReplyTo } = env as unknown as Record<
+      string,
+      unknown
+    >;
+    await sendSignupLinkEmail(
+      { ...withoutReplyTo, EMAIL: { send } } as unknown as SignupBindings,
+      { email: "parent@example.com", name: "Hatcher" },
+      options,
+    );
+    expect(send.mock.calls[0][0]).not.toHaveProperty("replyTo");
+  });
+
   it("throws when the binding is missing", async () => {
     await expect(
       sendSignupLinkEmail(

@@ -271,7 +271,11 @@ export function validateSignupFormInput(
     slug,
     eventId: text(input.eventId, "eventId", 1, 64),
     formType: formType as SignupFormType,
-    title: text(input.title, "title", 2, 120),
+    // A form title is one line. text() preserves newlines on purpose, because
+    // instructions need them, but the title is interpolated into the email
+    // Subject field, so collapse them here rather than trusting whatever the
+    // send_email binding does with a control character in a header field.
+    title: text(input.title, "title", 2, 120).replace(/\n+/g, " "),
     instructions: optionalText(input.instructions, "instructions", 2_000) ?? "",
     state: state as SignupFormState,
     closesAt:

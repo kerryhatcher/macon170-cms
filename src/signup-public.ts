@@ -112,6 +112,11 @@ async function verifyTurnstile(
   fetchImpl: typeof fetch,
 ): Promise<void> {
   if (!env.TURNSTILE_SECRET) {
+    // Fail closed, but say so in the logs: without this line a missing secret
+    // is indistinguishable from a Turnstile outage to whoever is on call.
+    console.error(
+      JSON.stringify({ event: "signup_turnstile_secret_missing" }),
+    );
     throw new SignupRequestError(
       503,
       "temporary",
