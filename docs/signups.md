@@ -145,6 +145,14 @@ The daily CMS cron runs three passes:
 
 Each pass logs its deleted-row count, including zero.
 
+Contact retention and signup retention run as separate passes in the same cron
+invocation, each wrapped so a failure in one is logged under its own event
+(`contact_retention_failed`, `signup_retention_failed`) and does not stop the
+other from running. The invocation still fails after both have run, so a real
+error is still visible in Worker observability. If the Worker is deployed
+before `0004_signups.sql` is applied, expect `signup_retention_failed` on the
+nightly run until the migration lands.
+
 ## Local setup and validation
 
 ```bash
