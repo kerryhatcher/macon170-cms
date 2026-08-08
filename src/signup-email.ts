@@ -78,7 +78,7 @@ export async function sendSignupLinkEmail(
     throw new Error("The signup email binding is not configured.");
   }
   const rendered = renderSignupEmail(options);
-  const message: Record<string, unknown> = {
+  const message: EmailMessageBuilder = {
     from: {
       email: env.INVITE_FROM_EMAIL,
       name: env.INVITE_FROM_NAME ?? "Pack 170 Volunteers",

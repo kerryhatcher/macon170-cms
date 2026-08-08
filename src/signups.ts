@@ -22,7 +22,12 @@ export type SignupBindings = Bindings & {
   INVITE_FROM_NAME?: string;
   INVITE_REPLY_TO?: string;
   SIGNUP_RATE_LIMITER: { limit(options: { key: string }): Promise<{ success: boolean }> };
-  EMAIL?: { send(message: unknown): Promise<void> };
+  // The real Cloudflare send_email binding, not a hand-rolled stub. A stub
+  // whose send() returned Promise<void> stopped this type from overlapping
+  // InviteEmailBindings in request-handler.ts, which forced an
+  // `as unknown as` double cast there and silently disabled compile-time
+  // checking on the invitation path.
+  EMAIL?: SendEmail;
 };
 
 export type SignupSlot = {

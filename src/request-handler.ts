@@ -370,7 +370,7 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
     }
 
     if (isInvitationDeliveryRequest(request, pathname)) {
-      const inviteEnv = env as unknown as InviteEmailBindings;
+      const inviteEnv = env as InviteEmailBindings;
       if (!inviteEnv.EMAIL || !inviteEnv.INVITE_FROM_EMAIL) {
         return errorResponse(
           503,
@@ -382,7 +382,7 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
 
     const response = await appFetch(request, rawEnv, ctx);
     if (isInvitationDeliveryRequest(request, pathname)) {
-      return deliverInvitationEmail(response, request, pathname, env as unknown as InviteEmailBindings);
+      return deliverInvitationEmail(response, request, pathname, env as InviteEmailBindings);
     }
     const origin = request.headers.get("Origin");
     if (
