@@ -1,6 +1,7 @@
 import {
   SignupConflictError,
   SignupNotFoundError,
+  SignupSlotFullError,
   isSignupClosed,
 } from "./signups";
 import type {
@@ -10,6 +11,9 @@ import type {
   SignupFormDetail,
   SignupFormInput,
   SignupFormState,
+  SignupResponseDetail,
+  SignupResponseInput,
+  SignupResponseStatus,
   SignupFormType,
   SignupSlot,
 } from "./signups";
@@ -393,4 +397,295 @@ export async function updateSignupForm(
   const form = await getSignupFormById(env, id);
   if (!form) throw new SignupNotFoundError("Signup form not found.");
   return form;
+}
+
+type ResponseRow = {
+  id: string;
+  form_id: string;
+  email: string;
+  family_name: string;
+  attending: number;
+  adults: number;
+  children: number;
+  dietary_notes: string | null;
+  status: SignupResponseStatus;
+  confirmed_at: number | null;
+  created_at: number;
+  updated_at: number;
+  form_slug: string;
+  form_title: string;
+  form_type: SignupFormType;
+};
+
+type ClaimRow = { slot_id: string; label: string; quantity: number };
+
+const responseSelect = `
+  SELECT signup_responses.id, signup_responses.form_id, signup_responses.email,
+         signup_responses.family_name, signup_responses.attending,
+         signup_responses.adults, signup_responses.children,
+         signup_responses.dietary_notes, signup_responses.status,
+         signup_responses.confirmed_at, signup_responses.created_at,
+         signup_responses.updated_at,
+         signup_forms.slug AS form_slug,
+         signup_forms.title AS form_title,
+         signup_forms.form_type AS form_type
+  FROM signup_responses
+  JOIN signup_forms ON signup_forms.id = signup_responses.form_id
+`;
+
+function isSlotFull(error: unknown): boolean {
+  return /signup slot is full/.test(String(error));
+}
+
+function isDuplicateEmail(error: unknown): boolean {
+  return /UNIQUE constraint failed: signup_responses\.form_id/.test(
+    String(error),
+  );
+}
+
+async function readClaims(
+  env: SignupBindings,
+  responseId: string,
+): Promise<Array<{ slotId: string; label: string; quantity: number }>> {
+  const rows = await env.DB.prepare(
+    `SELECT signup_claims.slot_id, signup_slots.label, signup_claims.quantity
+     FROM signup_claims
+     JOIN signup_slots ON signup_slots.id = signup_claims.slot_id
+     WHERE signup_claims.response_id = ?
+     ORDER BY signup_slots.position ASC`,
+  )
+    .bind(responseId)
+    .all<ClaimRow>();
+  return rows.results.map((row) => ({
+    slotId: row.slot_id,
+    label: row.label,
+    quantity: row.quantity,
+  }));
+}
+
+function rowToResponse(
+  row: ResponseRow,
+  claims: Array<{ slotId: string; label: string; quantity: number }>,
+): SignupResponseDetail {
+  return {
+    id: row.id,
+    formId: row.form_id,
+    formSlug: row.form_slug,
+    formTitle: row.form_title,
+    formType: row.form_type,
+    email: row.email,
+    familyName: row.family_name,
+    attending: row.attending === 1,
+    adults: row.adults,
+    children: row.children,
+    dietaryNotes: row.dietary_notes,
+    status: row.status,
+    confirmedAt:
+      row.confirmed_at === null
+        ? null
+        : new Date(row.confirmed_at).toISOString(),
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+    claims,
+  };
+}
+
+function claimStatements(
+  env: SignupBindings,
+  responseId: string,
+  input: SignupResponseInput,
+  now: number,
+) {
+  return input.claims.map((claim) =>
+    env.DB.prepare(
+      `INSERT INTO signup_claims
+         (id, response_id, slot_id, quantity, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).bind(
+      crypto.randomUUID(),
+      responseId,
+      claim.slotId,
+      claim.quantity,
+      now,
+    ),
+  );
+}
+
+export async function createSignupResponse(
+  env: SignupBindings,
+  form: SignupFormDetail,
+  input: SignupResponseInput,
+  tokenHash: string,
+  ipHash: string | null,
+): Promise<string> {
+  const id = crypto.randomUUID();
+  const now = Date.now();
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO signup_responses
+           (id, form_id, email, family_name, attending, adults, children,
+            dietary_notes, status, confirmed_at, token_hash, ip_hash,
+            created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unconfirmed', NULL, ?, ?, ?, ?)`,
+      ).bind(
+        id,
+        form.id,
+        input.email,
+        input.familyName,
+        input.attending ? 1 : 0,
+        input.adults,
+        input.children,
+        input.dietaryNotes,
+        tokenHash,
+        ipHash,
+        now,
+        now,
+      ),
+      ...claimStatements(env, id, input, now),
+      recordSignupAudit(env, "response", id, "created", null, {
+        formId: form.id,
+        claimCount: input.claims.length,
+      }),
+    ]);
+  } catch (error) {
+    if (isSlotFull(error)) {
+      throw new SignupSlotFullError("A requested item is already covered.");
+    }
+    if (isDuplicateEmail(error)) {
+      throw new SignupConflictError("That email already signed up.");
+    }
+    throw error;
+  }
+  return id;
+}
+
+export async function findResponseIdByEmail(
+  env: SignupBindings,
+  formId: string,
+  email: string,
+): Promise<string | null> {
+  const row = await env.DB.prepare(
+    `SELECT id FROM signup_responses WHERE form_id = ? AND email = ? LIMIT 1`,
+  )
+    .bind(formId, email)
+    .first<{ id: string }>();
+  return row?.id ?? null;
+}
+
+export async function rotateResponseToken(
+  env: SignupBindings,
+  responseId: string,
+  tokenHash: string,
+  actorId: string | null,
+): Promise<void> {
+  const now = Date.now();
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE signup_responses SET token_hash = ?, updated_at = ? WHERE id = ?`,
+    ).bind(tokenHash, now, responseId),
+    recordSignupAudit(env, "response", responseId, "link_resent", actorId),
+  ]);
+}
+
+export async function getResponseByTokenHash(
+  env: SignupBindings,
+  tokenHash: string,
+): Promise<SignupResponseDetail | null> {
+  const row = await env.DB.prepare(
+    `${responseSelect} WHERE signup_responses.token_hash = ? LIMIT 1`,
+  )
+    .bind(tokenHash)
+    .first<ResponseRow>();
+  if (!row) return null;
+  return rowToResponse(row, await readClaims(env, row.id));
+}
+
+export async function confirmSignupResponse(
+  env: SignupBindings,
+  responseId: string,
+): Promise<void> {
+  const now = Date.now();
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE signup_responses
+       SET status = 'confirmed', confirmed_at = ?, updated_at = ?
+       WHERE id = ? AND status = 'unconfirmed'`,
+    ).bind(now, now, responseId),
+    recordSignupAudit(env, "response", responseId, "confirmed", null),
+  ]);
+}
+
+export async function updateSignupResponse(
+  env: SignupBindings,
+  responseId: string,
+  input: SignupResponseInput,
+): Promise<void> {
+  const now = Date.now();
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE signup_responses
+         SET family_name = ?, attending = ?, adults = ?, children = ?,
+             dietary_notes = ?, updated_at = ?
+         WHERE id = ?`,
+      ).bind(
+        input.familyName,
+        input.attending ? 1 : 0,
+        input.adults,
+        input.children,
+        input.dietaryNotes,
+        now,
+        responseId,
+      ),
+      // Claims are replaced inside the same batch. D1 runs a batch in one
+      // implicit transaction, so an oversubscribed slot aborts the trigger and
+      // rolls back the delete along with it.
+      env.DB.prepare(`DELETE FROM signup_claims WHERE response_id = ?`).bind(
+        responseId,
+      ),
+      ...claimStatements(env, responseId, input, now),
+      recordSignupAudit(env, "response", responseId, "updated", null, {
+        claimCount: input.claims.length,
+      }),
+    ]);
+  } catch (error) {
+    if (isSlotFull(error)) {
+      throw new SignupSlotFullError("A requested item is already covered.");
+    }
+    throw error;
+  }
+}
+
+export async function deleteSignupResponse(
+  env: SignupBindings,
+  responseId: string,
+  actorId: string | null,
+): Promise<void> {
+  await env.DB.batch([
+    // The audit row is written before the delete: signup_audit.entity_id has
+    // no foreign key, so the audit must be committed while the response row
+    // still exists to describe, and must outlive it after the delete runs.
+    recordSignupAudit(env, "response", responseId, "deleted", actorId),
+    env.DB.prepare(`DELETE FROM signup_responses WHERE id = ?`).bind(
+      responseId,
+    ),
+  ]);
+}
+
+export async function listSignupResponses(
+  env: SignupBindings,
+  formId: string,
+): Promise<SignupResponseDetail[]> {
+  const rows = await env.DB.prepare(
+    `${responseSelect} WHERE signup_responses.form_id = ?
+     ORDER BY signup_responses.created_at ASC`,
+  )
+    .bind(formId)
+    .all<ResponseRow>();
+  const details: SignupResponseDetail[] = [];
+  for (const row of rows.results) {
+    details.push(rowToResponse(row, await readClaims(env, row.id)));
+  }
+  return details;
 }
