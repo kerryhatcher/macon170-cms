@@ -19,6 +19,7 @@ import type {
   SignupResponseInput,
   SignupResponseStatus,
   SignupSlot,
+  SignupSlotInput,
 } from "./signups";
 
 export type SignupFormSummary = SignupForm & {
@@ -282,6 +283,28 @@ function slotStatements(
   );
 }
 
+// Slots are compared by their meaning, not by id: slotStatements mints a fresh
+// uuid per row, so a save that reinserts an identical list would still cascade
+// every family's claims away. Both sides are ordered by position (readSlots
+// sorts, validateSignupFormInput assigns position by index).
+function slotsUnchanged(
+  existing: SignupSlot[],
+  input: SignupSlotInput[],
+): boolean {
+  return (
+    existing.length === input.length &&
+    existing.every((slot, index) => {
+      const next = input[index];
+      return (
+        slot.position === next.position &&
+        slot.label === next.label &&
+        slot.quantityNeeded === next.quantityNeeded &&
+        slot.notes === next.notes
+      );
+    })
+  );
+}
+
 export async function createSignupForm(
   env: SignupBindings,
   input: SignupFormInput,
@@ -374,19 +397,30 @@ export async function updateSignupForm(
     }
 
     // Phase 2: only reached if this call won the revision bump. Slots are
-    // replaced wholesale. Claims reference slots with ON DELETE CASCADE, so
-    // editing the item list after families have claimed items clears those
-    // claims; the admin page warns before saving. Accepted trade-off: if
-    // this second batch fails after phase 1 committed, the form carries the
-    // new revision with the old slot list — a failed edit the volunteer
-    // retries with the fresh revision, not cross-volunteer corruption.
+    // replaced wholesale, but only when the submitted list actually differs
+    // from the stored one. Claims reference slots with ON DELETE CASCADE, so
+    // replacing an unchanged list would destroy every family's claims on a
+    // title-only or open/closed-only save. Editing the item list itself is
+    // still destructive by design (documented in docs/signups.md). Accepted
+    // trade-off: if this second batch fails after phase 1 committed, the form
+    // carries the new revision with the old slot list — a failed edit the
+    // volunteer retries with the fresh revision, not cross-volunteer
+    // corruption.
+    const slotsChanged = !slotsUnchanged(existing.slots, input.slots);
     await env.DB.batch([
-      env.DB.prepare(`DELETE FROM signup_slots WHERE form_id = ?`).bind(id),
-      ...slotStatements(env, id, input, now),
+      ...(slotsChanged
+        ? [
+            env.DB.prepare(`DELETE FROM signup_slots WHERE form_id = ?`).bind(
+              id,
+            ),
+            ...slotStatements(env, id, input, now),
+          ]
+        : []),
       recordSignupAudit(env, "form", id, "updated", actorId, {
         slug: input.slug,
         state: input.state,
         slotCount: input.slots.length,
+        slotsReplaced: slotsChanged,
       }),
     ]);
   } catch (error) {

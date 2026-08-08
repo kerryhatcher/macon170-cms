@@ -26,14 +26,18 @@ accept responses, `closed` to stop them. A `closesAt` deadline closes the form
 automatically without another edit.
 
 Editing an `items` form's slot list is destructive to existing claims:
-`signup_slots` is replaced wholesale on every save, and `signup_claims.slot_id`
-cascades on delete. Reordering or renaming an item after families have
-claimed it deletes their claims along with the old slot row, even though the
-family's response otherwise survives untouched. **Add new items instead of
-reordering or renaming existing ones once a form is open.** If claims do
-disappear this way, `signup_audit` still has the "updated" record showing the
-old slot count, and the response's own audit trail shows what it originally
-claimed.
+`signup_slots` is replaced wholesale whenever the submitted list differs from
+the stored one in any item's label, order, quantity, or notes, and
+`signup_claims.slot_id` cascades on delete. Reordering or renaming an item
+after families have claimed it deletes their claims along with the old slot
+row, even though the family's response otherwise survives untouched. **Add new
+items instead of reordering or renaming existing ones once a form is open.**
+A save that changes only the title, instructions, deadline, or open/closed
+state leaves the slot rows and every claim in place; the "updated" audit row
+records `slotsReplaced` so an operator can tell the two cases apart. If claims
+do disappear this way, `signup_audit` still has the "updated" record showing
+the old slot count, and the response's own audit trail shows what it
+originally claimed.
 
 Saving a form is optimistic-concurrency guarded by `expectedRevision`, the
 same as the calendar: the admin page reports a conflict rather than silently

@@ -194,6 +194,110 @@ describe("signup form updates", () => {
     expect(updated.revision).toBe(3);
   });
 
+  it("keeps the stored slots when a save changes only form metadata", async () => {
+    // A volunteer fixing a typo in the title sends the same slot list back.
+    // Replacing slots here would cascade every family's claims away, so the
+    // DELETE must not be issued at all.
+    const statements: string[] = [];
+    const batch = vi.fn().mockResolvedValue([]);
+    let firstCalls = 0;
+    const storedSlot = {
+      id: "slt-1",
+      form_id: "frm-1",
+      position: 0,
+      label: "Hot dog buns",
+      quantity_needed: 3,
+      notes: null,
+      created_at: 1,
+      updated_at: 1,
+    };
+    const db = {
+      prepare: (sql: string) => {
+        statements.push(sql);
+        return {
+          sql,
+          bind() {
+            return this;
+          },
+          first: async () => {
+            firstCalls += 1;
+            return firstCalls === 1 ? formRow : { ...formRow, revision: 3 };
+          },
+          all: async () => ({ results: [storedSlot] }),
+          run: async () => ({ meta: { changes: 1 } }),
+        };
+      },
+      batch,
+    };
+    await updateSignupForm(
+      { DB: db } as unknown as SignupBindings,
+      "frm-1",
+      { ...formInput, title: "Lego Derby food (fixed)" },
+      formRow.revision,
+      "admin-1",
+    );
+    expect(batch).toHaveBeenCalledOnce();
+    expect(statements.some((sql) => sql.includes("DELETE FROM signup_slots"))).toBe(
+      false,
+    );
+    expect(statements.some((sql) => sql.includes("INSERT INTO signup_slots"))).toBe(
+      false,
+    );
+    expect(statements.some((sql) => sql.includes("INSERT INTO signup_audit"))).toBe(
+      true,
+    );
+  });
+
+  it("replaces slots when the submitted item list differs", async () => {
+    const statements: string[] = [];
+    const batch = vi.fn().mockResolvedValue([]);
+    let firstCalls = 0;
+    const db = {
+      prepare: (sql: string) => {
+        statements.push(sql);
+        return {
+          sql,
+          bind() {
+            return this;
+          },
+          first: async () => {
+            firstCalls += 1;
+            return firstCalls === 1 ? formRow : { ...formRow, revision: 3 };
+          },
+          all: async () => ({
+            results: [
+              {
+                id: "slt-1",
+                form_id: "frm-1",
+                position: 0,
+                label: "Buns of a different name",
+                quantity_needed: 3,
+                notes: null,
+                created_at: 1,
+                updated_at: 1,
+              },
+            ],
+          }),
+          run: async () => ({ meta: { changes: 1 } }),
+        };
+      },
+      batch,
+    };
+    await updateSignupForm(
+      { DB: db } as unknown as SignupBindings,
+      "frm-1",
+      formInput,
+      formRow.revision,
+      "admin-1",
+    );
+    expect(statements.some((sql) => sql.includes("DELETE FROM signup_slots"))).toBe(
+      true,
+    );
+    expect(statements.some((sql) => sql.includes("INSERT INTO signup_slots"))).toBe(
+      true,
+    );
+  });
+
   it("rejects a losing racer without touching slots (TOCTOU guard)", async () => {
     // Two volunteers both read revision 2 and pass the pre-check. The
     // winner's guarded UPDATE already bumped the row to revision 3, so this
