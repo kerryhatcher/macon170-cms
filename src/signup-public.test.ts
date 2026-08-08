@@ -472,6 +472,96 @@ describe("public signup routing", () => {
     expect(sql).not.toContain("INSERT INTO signup_responses");
   });
 
+  it("answers 409 slot_full with refreshed availability when a claim loses the race", async () => {
+    // The capacity trigger aborts the batch for the racer who lost. The page
+    // needs the 409 code plus a fresh form payload to re-render, and no email
+    // may go out for a response that was never written.
+    const batch = vi
+      .fn()
+      .mockRejectedValue(
+        new Error("D1_ERROR: signup slot is full: ABORT"),
+      );
+    const env = baseEnv({ DB: stubDb({ batch }) });
+    const response = await handlePublicSignupRequest(
+      submit(validSubmission),
+      env,
+      turnstileOk,
+    );
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as {
+      error: { code: string };
+      form: { slots: Array<{ quantityNeeded: number }> } | null;
+    };
+    expect(body.error.code).toBe("slot_full");
+    expect(body.form?.slots[0]).toMatchObject({ quantityNeeded: 3 });
+    const email = (env as unknown as { EMAIL: { send: ReturnType<typeof vi.fn> } })
+      .EMAIL.send;
+    expect(email).not.toHaveBeenCalled();
+  });
+
+  it("answers 409 slot_full when an edit oversubscribes a slot", async () => {
+    const batch = vi
+      .fn()
+      .mockRejectedValue(new Error("D1_ERROR: signup slot is full: ABORT"));
+    const db = {
+      prepare: (sql: string) => ({
+        sql,
+        bind() {
+          return this;
+        },
+        first: async () => {
+          if (sql.includes("FROM signup_responses")) {
+            return {
+              id: "rsp-1",
+              form_id: "frm-1",
+              email: "parent@example.com",
+              family_name: "Hatcher",
+              attending: 1,
+              adults: 2,
+              children: 1,
+              dietary_notes: null,
+              status: "confirmed",
+              confirmed_at: 1,
+              created_at: 1,
+              updated_at: 1,
+              form_slug: "lego-derby-food",
+              form_title: "Lego Derby food",
+              form_type: "items",
+            };
+          }
+          if (sql.includes("FROM signup_forms")) return openFormRow;
+          return null;
+        },
+        all: async () => ({
+          results: sql.includes("FROM signup_slots") ? [slotRow] : [],
+        }),
+        run: async () => ({ meta: { changes: 1 } }),
+      }),
+      batch,
+    };
+    const response = await handlePublicSignupRequest(
+      new Request(
+        "https://cms.macon170.com/api/signups/v1/responses/some-token",
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Origin: publicOrigin },
+          body: JSON.stringify({
+            familyName: "Hatcher",
+            adults: 2,
+            children: 1,
+            claims: [{ slotId: "slt-1", quantity: 3 }],
+          }),
+        },
+      ),
+      baseEnv({ DB: db }),
+      turnstileOk,
+    );
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "slot_full" },
+    });
+  });
+
   it("does not email a link when the response was deleted mid-rotation", async () => {
     // The row was found by email, then deleted before the token rotation
     // landed. The UPDATE matches nothing, so the new hash is stored nowhere
