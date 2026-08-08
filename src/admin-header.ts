@@ -4,7 +4,12 @@
  * border, round logo badge, Montserrat nav links, and a mobile hamburger menu.
  */
 
-export type AdminPage = "dash" | "leadership" | "contact-form" | "calendar";
+export type AdminPage =
+  | "dash"
+  | "leadership"
+  | "contact-form"
+  | "calendar"
+  | "signups";
 
 export function renderAdminHeader(currentPage: AdminPage): string {
   const links: Array<{ href: string; label: string; page: AdminPage }> = [
@@ -12,6 +17,7 @@ export function renderAdminHeader(currentPage: AdminPage): string {
     { href: "/admin/leadership", label: "Leadership", page: "leadership" },
     { href: "/admin/contact-form", label: "Contact Form", page: "contact-form" },
     { href: "/admin/calendar", label: "Calendar", page: "calendar" },
+    { href: "/admin/signups", label: "Signups", page: "signups" },
   ];
 
   const navItems = links

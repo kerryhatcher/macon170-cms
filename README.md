@@ -8,7 +8,9 @@ use a dedicated, permissioned CMS workflow documented in
 be blank for vacant roles. Publish only records approved for display.
 Parent inquiries use SonicJS’s existing `contact` form and native
 `form_submissions` model through the hardened workflow in
-[docs/contact.md](docs/contact.md).
+[docs/contact.md](docs/contact.md). Event signups — attendance intent and
+item claims attached to a calendar event — use the workflow documented in
+[docs/signups.md](docs/signups.md).
 
 ## Getting Started
 

@@ -688,3 +688,147 @@ describe('CMS request guard', () => {
     expect(response.status).toBe(403)
   })
 })
+
+describe('signup admin routing', () => {
+  const secret = 'test-secret-that-is-not-used-in-production'
+
+  it('returns 403 without the signups.manage permission', async () => {
+    const token = await AuthManager.generateToken(
+      'editor-1',
+      'editor@example.test',
+      'editor',
+      secret,
+    )
+    // The permission query finds no row, so the grant check fails.
+    const db = {
+      prepare: () => ({
+        bind() {
+          return this
+        },
+        first: async () => null,
+      }),
+    }
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request('https://cms.macon170.com/api/signups-admin/v1/forms', {
+        headers: { Cookie: `auth_token=${token}` },
+      }),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: 'forbidden',
+        message: 'The signups.manage permission is required.',
+      },
+    })
+  })
+
+  it('rejects a mutation without the CSRF header', async () => {
+    const token = await AuthManager.generateToken(
+      'admin-1',
+      'admin@example.test',
+      'admin',
+      secret,
+    )
+    // The permission query finds a row, so authorization passes and the
+    // request reaches the CSRF gate.
+    const db = {
+      prepare: () => ({
+        bind() {
+          return this
+        },
+        first: async () => ({ id: 'admin-1' }),
+      }),
+      batch: vi.fn(),
+    }
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request('https://cms.macon170.com/api/signups-admin/v1/forms', {
+        method: 'POST',
+        headers: {
+          Cookie: `auth_token=${token}`,
+          Origin: 'https://cms.macon170.com',
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      }),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: { code: 'invalid_csrf', message: 'Security token rejected.' },
+    })
+    expect(db.batch).not.toHaveBeenCalled()
+  })
+
+  it('requires the signups.manage permission for the admin page', async () => {
+    const token = await AuthManager.generateToken(
+      'editor-1',
+      'editor@example.test',
+      'editor',
+      secret,
+    )
+    const db = {
+      prepare: () => ({
+        bind() {
+          return this
+        },
+        first: async () => null,
+      }),
+    }
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request('https://cms.macon170.com/admin/signups', {
+        headers: { Cookie: `auth_token=${token}` },
+      }),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+    expect(response.status).toBe(403)
+  })
+
+  it('redirects an anonymous visitor to login with a returnTo', async () => {
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request('https://cms.macon170.com/admin/signups'),
+      cmsEnv(),
+      executionContext,
+    )
+    expect(response.status).toBe(302)
+    expect(response.headers.get('Location')).toBe(
+      'https://cms.macon170.com/auth/login?returnTo=%2Fadmin%2Fsignups',
+    )
+  })
+
+  it('rejects a non-UUID form id in the detail page path without echoing it', async () => {
+    const token = await AuthManager.generateToken(
+      'admin-1',
+      'admin@example.test',
+      'admin',
+      secret,
+    )
+    // The permission query finds a row, so a volunteer with signups.manage
+    // reaches the id check — which must still reject a non-UUID path segment.
+    const db = {
+      prepare: () => ({
+        bind() {
+          return this
+        },
+        first: async () => ({ id: 'admin-1' }),
+      }),
+    }
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request(
+        'https://cms.macon170.com/admin/signups/</script><script>alert(1)</script>',
+        { headers: { Cookie: `auth_token=${token}` } },
+      ),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+
+    expect(response.status).toBe(404)
+    const body = await response.text()
+    expect(body).not.toContain('<script>alert(1)</script>')
+  })
+})
