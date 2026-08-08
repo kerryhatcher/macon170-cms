@@ -16,6 +16,7 @@ import {
   SignupConflictError,
   SignupRequestError,
   SignupSlotFullError,
+  decodeSignupSegment,
   hashSignupToken,
   isSignupClosed,
   issueSignupToken,
@@ -233,7 +234,7 @@ export async function handlePublicSignupRequest(
         await handleSubmission(
           request,
           env,
-          decodeURIComponent(rest.slice(0, -"/responses".length)),
+          decodeSignupSegment(rest.slice(0, -"/responses".length)),
           fetchImpl,
         ),
         corsOrigin,
@@ -242,7 +243,7 @@ export async function handlePublicSignupRequest(
     if (request.method !== "GET") {
       throw new SignupRequestError(405, "validation", "Method not allowed.");
     }
-    const form = await getPublicSignupForm(env, decodeURIComponent(rest));
+    const form = await getPublicSignupForm(env, decodeSignupSegment(rest));
     if (!form) throw notFound();
     return cors(json({ version: SIGNUP_VERSION, form }), corsOrigin);
   } catch (error) {
@@ -410,7 +411,7 @@ async function handleResponseRoute(
   if (!rawToken || rawToken.includes("/")) throw notFound();
   const detail = await getResponseByTokenHash(
     env,
-    await hashSignupToken(decodeURIComponent(rawToken)),
+    await hashSignupToken(decodeSignupSegment(rawToken)),
   );
   if (!detail) throw notFound();
 
@@ -445,7 +446,7 @@ async function handleResponseRoute(
   }
   const updated = await getResponseByTokenHash(
     env,
-    await hashSignupToken(decodeURIComponent(rawToken)),
+    await hashSignupToken(decodeSignupSegment(rawToken)),
   );
   return json({ version: SIGNUP_VERSION, response: updated });
 }

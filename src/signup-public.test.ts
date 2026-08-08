@@ -159,6 +159,38 @@ describe("public signup routing", () => {
     expect(body.error.message).toBe("Signup not found.");
   });
 
+  it("returns the same generic 404 for a malformed percent-encoded token", async () => {
+    // `%zz` makes decodeURIComponent throw. Reaching the generic catch would
+    // answer 503 here while every unknown token answers 404, which tells an
+    // enumerator the two cases apart.
+    const request = new Request(
+      "https://cms.macon170.com/api/signups/v1/responses/%zz",
+      { headers: { Origin: publicOrigin } },
+    );
+    const response = await handlePublicSignupRequest(
+      request,
+      baseEnv(),
+      turnstileOk,
+    );
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "not_found", message: "Signup not found." },
+    });
+  });
+
+  it("returns a generic 404 for a malformed percent-encoded form slug", async () => {
+    const request = new Request(
+      "https://cms.macon170.com/api/signups/v1/forms/%zz",
+      { headers: { Origin: publicOrigin } },
+    );
+    const response = await handlePublicSignupRequest(
+      request,
+      baseEnv(),
+      turnstileOk,
+    );
+    expect(response.status).toBe(404);
+  });
+
   it("never logs the raw token when a token route fails unexpectedly", async () => {
     const secretToken = "super-secret-magic-link-token";
     const db = {

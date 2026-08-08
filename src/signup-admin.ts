@@ -14,6 +14,7 @@ import {
   SignupConflictError,
   SignupNotFoundError,
   SignupRequestError,
+  decodeSignupSegment,
   issueSignupToken,
   validateSignupFormInput,
 } from "./signups";
@@ -110,7 +111,7 @@ export async function handleAdminSignupRequest(
     }
 
     if (relative.startsWith("/forms/")) {
-      const id = decodeURIComponent(relative.slice("/forms/".length));
+      const id = decodeSignupSegment(relative.slice("/forms/".length));
       if (!id || id.includes("/")) {
         throw new SignupRequestError(404, "not_found", "Signup not found.");
       }
@@ -148,7 +149,7 @@ export async function handleAdminSignupRequest(
     if (relative.startsWith("/responses/")) {
       const rest = relative.slice("/responses/".length);
       const resend = rest.endsWith("/resend");
-      const id = decodeURIComponent(
+      const id = decodeSignupSegment(
         resend ? rest.slice(0, -"/resend".length) : rest,
       );
       if (!id || id.includes("/")) {

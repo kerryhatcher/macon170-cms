@@ -132,6 +132,19 @@ export class SignupRequestError extends Error {
   }
 }
 
+// decodeURIComponent throws a URIError on invalid percent-encoding (`%zz`).
+// Left to reach a generic catch, that turns a malformed path segment into a
+// 503 while every unknown or deleted one returns 404 — an enumeration oracle
+// on the exact axis the token routes are meant to be uniform about. Every
+// path segment in this feature decodes through here.
+export function decodeSignupSegment(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw new SignupRequestError(404, "not_found", "Signup not found.");
+  }
+}
+
 export class SignupConflictError extends Error {}
 export class SignupNotFoundError extends Error {}
 export class SignupSlotFullError extends Error {}
