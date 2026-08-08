@@ -61,6 +61,15 @@ function cors(response: Response, origin: string | null): Response {
 const notFound = () =>
   new SignupRequestError(404, "not_found", "Signup not found.");
 
+// The token routes carry the bearer credential in the path itself. Never log
+// a raw pathname from this module — route every log line through here so a
+// future log statement can't reintroduce the leak.
+function redactedPath(pathname: string): string {
+  return pathname.startsWith(responsesPrefix)
+    ? `${responsesPrefix}:token`
+    : pathname;
+}
+
 async function readBody(request: Request): Promise<Record<string, unknown>> {
   const declared = Number(request.headers.get("Content-Length") ?? "0");
   if (Number.isFinite(declared) && declared > SIGNUP_BODY_LIMIT) {
@@ -140,10 +149,14 @@ async function verifyTurnstile(
       .map((value) => value.trim())
       .filter(Boolean),
   );
+  // Both checks fail closed: a siteverify response missing action or
+  // hostname is a failure, not a skip. `outcome.action && ...` would let a
+  // token verified without that metadata sail through silently.
   if (
     !outcome.success ||
-    (outcome.action && outcome.action !== expectedAction) ||
-    (outcome.hostname && !hostnames.has(outcome.hostname))
+    outcome.action !== expectedAction ||
+    !outcome.hostname ||
+    !hostnames.has(outcome.hostname)
   ) {
     throw new SignupRequestError(
       403,
@@ -242,7 +255,7 @@ export async function handlePublicSignupRequest(
     console.error(
       JSON.stringify({
         event: "signup_public_request_failed",
-        path: url.pathname,
+        path: redactedPath(url.pathname),
         error: error instanceof Error ? error.message : "Unknown error",
       }),
     );

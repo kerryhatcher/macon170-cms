@@ -158,6 +158,44 @@ describe("public signup routing", () => {
     expect(body.error.message).toBe("Signup not found.");
   });
 
+  it("never logs the raw token when a token route fails unexpectedly", async () => {
+    const secretToken = "super-secret-magic-link-token";
+    const db = {
+      prepare: (sql: string) => ({
+        bind() {
+          return this;
+        },
+        first: async () => {
+          if (sql.includes("FROM signup_responses")) {
+            // Not a SignupRequestError: exercises the generic catch-all,
+            // which is the branch that used to log the raw request path.
+            throw new Error("D1 is unavailable");
+          }
+          return null;
+        },
+        all: async () => ({ results: [] }),
+      }),
+      batch: vi.fn(),
+    };
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await handlePublicSignupRequest(
+        new Request(
+          `https://cms.macon170.com/api/signups/v1/responses/${secretToken}`,
+          { headers: { Origin: publicOrigin } },
+        ),
+        baseEnv({ DB: db }),
+        turnstileOk,
+      );
+      expect(response.status).toBe(503);
+      const logged = errorSpy.mock.calls.flat().join("\n");
+      expect(logged).not.toContain(secretToken);
+      expect(logged).toContain("/api/signups/v1/responses/:token");
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("confirms an unconfirmed response on the first valid token use", async () => {
     const batch = vi.fn().mockResolvedValue([]);
     // confirmSignupResponse runs its guarded UPDATE and the follow-up audit
@@ -266,6 +304,44 @@ describe("public signup routing", () => {
       submit(validSubmission),
       baseEnv(),
       failing,
+    );
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "security" },
+    });
+  });
+
+  it("rejects a Turnstile response missing the action field (fails closed)", async () => {
+    const missingAction = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ success: true, hostname: "www.macon170.com" }),
+        ),
+      );
+    const response = await handlePublicSignupRequest(
+      submit(validSubmission),
+      baseEnv(),
+      missingAction,
+    );
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "security" },
+    });
+  });
+
+  it("rejects a Turnstile response missing the hostname field (fails closed)", async () => {
+    const missingHostname = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ success: true, action: "turnstile-spin-v2" }),
+        ),
+      );
+    const response = await handlePublicSignupRequest(
+      submit(validSubmission),
+      baseEnv(),
+      missingHostname,
     );
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toMatchObject({
