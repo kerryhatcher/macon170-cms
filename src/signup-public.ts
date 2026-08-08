@@ -334,7 +334,12 @@ async function handleSubmission(
 
   if (existingId) {
     responseId = existingId;
-    await rotateResponseToken(env, responseId, tokenHash, null);
+    // A false rotation means the row was deleted between the lookup and the
+    // write. Emailing the link anyway would hand the family a link that can
+    // never resolve while reporting success.
+    if (!(await rotateResponseToken(env, responseId, tokenHash, null))) {
+      throw notFound();
+    }
   } else {
     try {
       responseId = await createSignupResponse(
@@ -354,7 +359,9 @@ async function handleSubmission(
         const raced = await findResponseIdByEmail(env, form.id, input.email);
         if (!raced) throw error;
         responseId = raced;
-        await rotateResponseToken(env, responseId, tokenHash, null);
+        if (!(await rotateResponseToken(env, responseId, tokenHash, null))) {
+          throw notFound();
+        }
       } else {
         throw error;
       }

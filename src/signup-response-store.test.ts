@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   confirmSignupResponse,
   createSignupResponse,
+  deleteSignupResponse,
   getResponseByTokenHash,
+  rotateResponseToken,
   updateSignupResponse,
 } from "./signup-store";
 import {
@@ -295,5 +297,77 @@ describe("token lookup", () => {
       status: "unconfirmed",
       claims: [{ slotId: "slt-1", label: "Hot dog buns", quantity: 2 }],
     });
+  });
+});
+
+describe("response deletion and token rotation", () => {
+  function dbWithRuns(changes: number[]) {
+    const statements: string[] = [];
+    let call = 0;
+    const db = {
+      prepare: (sql: string) => {
+        statements.push(sql);
+        return {
+          sql,
+          bind() {
+            return this;
+          },
+          run: async () => ({ meta: { changes: changes[call++] ?? 0 } }),
+        };
+      },
+    };
+    return { db, statements };
+  }
+
+  it("writes the deleted audit row only when a row was actually removed", async () => {
+    const removed = dbWithRuns([1, 1]);
+    await deleteSignupResponse(
+      { DB: removed.db } as unknown as SignupBindings,
+      "rsp-1",
+      "admin-1",
+    );
+    expect(
+      removed.statements.some((sql) => sql.includes("INSERT INTO signup_audit")),
+    ).toBe(true);
+  });
+
+  it("skips the audit row when the delete matched nothing", async () => {
+    // Two actors racing to withdraw the same response: only one deletion
+    // happened, so only one audit row may exist.
+    const missing = dbWithRuns([0]);
+    await deleteSignupResponse(
+      { DB: missing.db } as unknown as SignupBindings,
+      "rsp-1",
+      null,
+    );
+    expect(
+      missing.statements.some((sql) => sql.includes("INSERT INTO signup_audit")),
+    ).toBe(false);
+  });
+
+  it("reports whether the token rotation matched a row", async () => {
+    const batch = vi
+      .fn()
+      .mockResolvedValue([{ meta: { changes: 1 } }, { meta: { changes: 1 } }]);
+    await expect(
+      rotateResponseToken(
+        { DB: dbWithBatch(batch) } as unknown as SignupBindings,
+        "rsp-1",
+        "hash-1",
+        null,
+      ),
+    ).resolves.toBe(true);
+
+    const gone = vi
+      .fn()
+      .mockResolvedValue([{ meta: { changes: 0 } }, { meta: { changes: 1 } }]);
+    await expect(
+      rotateResponseToken(
+        { DB: dbWithBatch(gone) } as unknown as SignupBindings,
+        "rsp-1",
+        "hash-1",
+        null,
+      ),
+    ).resolves.toBe(false);
   });
 });

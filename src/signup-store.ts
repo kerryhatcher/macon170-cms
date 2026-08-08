@@ -610,19 +610,25 @@ export async function findResponseIdByEmail(
   return row?.id ?? null;
 }
 
+// Returns false when the UPDATE matched no row, which means the response was
+// deleted between the lookup and this write. A zero-row UPDATE is not a SQL
+// error, so callers that ignored the result emailed a magic link whose hash
+// was never stored anywhere and reported success. Callers must treat false as
+// "the response is gone" rather than sending mail.
 export async function rotateResponseToken(
   env: SignupBindings,
   responseId: string,
   tokenHash: string,
   actorId: string | null,
-): Promise<void> {
+): Promise<boolean> {
   const now = Date.now();
-  await env.DB.batch([
+  const results = await env.DB.batch([
     env.DB.prepare(
       `UPDATE signup_responses SET token_hash = ?, updated_at = ? WHERE id = ?`,
     ).bind(tokenHash, now, responseId),
     recordSignupAudit(env, "response", responseId, "link_resent", actorId),
   ]);
+  return Number(results[0]?.meta?.changes ?? 0) > 0;
 }
 
 export async function getResponseByTokenHash(
@@ -712,15 +718,25 @@ export async function deleteSignupResponse(
   responseId: string,
   actorId: string | null,
 ): Promise<void> {
-  await env.DB.batch([
-    // The audit row is written before the delete: signup_audit.entity_id has
-    // no foreign key, so the audit must be committed while the response row
-    // still exists to describe, and must outlive it after the delete runs.
-    recordSignupAudit(env, "response", responseId, "deleted", actorId),
-    env.DB.prepare(`DELETE FROM signup_responses WHERE id = ?`).bind(
-      responseId,
-    ),
-  ]);
+  // The delete runs alone first so meta.changes can be inspected, the same way
+  // confirmSignupResponse guards its update. A zero-row DELETE is not a SQL
+  // error, so batching the audit row alongside it recorded a second deletion,
+  // attributed to whichever actor lost the race, for a row that only ever got
+  // deleted once. signup_audit.entity_id has no foreign key, so writing the
+  // audit row after the delete is fine and it still outlives the response.
+  const removed = await env.DB.prepare(
+    `DELETE FROM signup_responses WHERE id = ?`,
+  )
+    .bind(responseId)
+    .run();
+  if (Number(removed.meta?.changes ?? 0) === 0) return;
+  await recordSignupAudit(
+    env,
+    "response",
+    responseId,
+    "deleted",
+    actorId,
+  ).run();
 }
 
 export async function listSignupResponses(

@@ -170,7 +170,11 @@ export async function handleAdminSignupRequest(
           throw new SignupRequestError(404, "not_found", "Signup not found.");
         }
         const { token, tokenHash } = await issueSignupToken();
-        await rotateResponseToken(env, id, tokenHash, user.userId);
+        // The response can be deleted between the lookup above and this write.
+        // Sending the email anyway would report a resend that can never work.
+        if (!(await rotateResponseToken(env, id, tokenHash, user.userId))) {
+          throw new SignupRequestError(404, "not_found", "Signup not found.");
+        }
         await sendSignupLinkEmail(
           env,
           { email: target.email, name: target.familyName },

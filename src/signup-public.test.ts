@@ -43,7 +43,12 @@ function stubDb(options: {
   batch?: ReturnType<typeof vi.fn>;
 } = {}) {
   const form = options.form === undefined ? openFormRow : options.form;
-  const batch = options.batch ?? vi.fn().mockResolvedValue([]);
+  // Real D1 returns one result per statement, each with its own meta.changes;
+  // rotateResponseToken reads meta.changes off the first of them to tell a
+  // real rotation from one that matched no row.
+  const batch =
+    options.batch ??
+    vi.fn().mockResolvedValue([{ meta: { changes: 1 } }, { meta: { changes: 1 } }]);
   return {
     prepare: (sql: string) => ({
       sql,
@@ -441,7 +446,9 @@ describe("public signup routing", () => {
   });
 
   it("resends the link for an email that already responded, without a second row", async () => {
-    const batch = vi.fn().mockResolvedValue([]);
+    const batch = vi
+      .fn()
+      .mockResolvedValue([{ meta: { changes: 1 } }, { meta: { changes: 1 } }]);
     const env = baseEnv({
       DB: stubDb({ existingResponseId: "rsp-1", batch }),
     });
@@ -463,6 +470,27 @@ describe("public signup routing", () => {
       .join("\n");
     expect(sql).toContain("UPDATE signup_responses SET token_hash");
     expect(sql).not.toContain("INSERT INTO signup_responses");
+  });
+
+  it("does not email a link when the response was deleted mid-rotation", async () => {
+    // The row was found by email, then deleted before the token rotation
+    // landed. The UPDATE matches nothing, so the new hash is stored nowhere
+    // and the link in the email could never resolve.
+    const batch = vi
+      .fn()
+      .mockResolvedValue([{ meta: { changes: 0 } }, { meta: { changes: 1 } }]);
+    const env = baseEnv({
+      DB: stubDb({ existingResponseId: "rsp-1", batch }),
+    });
+    const response = await handlePublicSignupRequest(
+      submit(validSubmission),
+      env,
+      turnstileOk,
+    );
+    expect(response.status).toBe(404);
+    const email = (env as unknown as { EMAIL: { send: ReturnType<typeof vi.fn> } })
+      .EMAIL.send;
+    expect(email).not.toHaveBeenCalled();
   });
 
   it("rate limits on the connecting IP even when the email keeps changing", async () => {
