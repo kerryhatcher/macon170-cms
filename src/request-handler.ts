@@ -38,10 +38,16 @@ import {
   updateContactSubmission,
 } from "./contact";
 import { renderLoginPage } from "./login-page";
+import { SIGNUP_ADMIN_BASE, handleAdminSignupRequest } from "./signup-admin";
+import {
+  renderSignupAdminDetailPage,
+  renderSignupAdminPage,
+} from "./signup-admin-page";
 import {
   handlePublicSignupRequest,
   isPublicSignupPath,
 } from "./signup-public";
+import { SIGNUP_PERMISSION } from "./signups";
 import type { SignupBindings } from "./signups";
 
 type CmsAppFetch = (
@@ -291,6 +297,61 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
 
     if (pathname.startsWith("/api/calendar-admin/v1")) {
       return handleAdminCalendarRequest(request, env);
+    }
+
+    if (pathname === "/admin/signups" || pathname.startsWith("/admin/signups/")) {
+      if (request.method !== "GET") {
+        return errorResponse(405, "method_not_allowed", "Method not allowed.");
+      }
+      const user = await authenticate(request, env);
+      if (!user) {
+        return Response.redirect(
+          `${url.origin}/auth/login?returnTo=${encodeURIComponent(pathname)}`,
+          302,
+        );
+      }
+      if (!(await hasPermission(env, user, SIGNUP_PERMISSION))) {
+        return errorResponse(
+          403,
+          "forbidden",
+          `The ${SIGNUP_PERMISSION} permission is required.`,
+        );
+      }
+      const csrf = await ensureCsrfToken(request, env);
+      if (csrf instanceof Response) return csrf;
+      const formId = pathname.slice("/admin/signups/".length);
+      const response = htmlResponse(
+        formId
+          ? renderSignupAdminDetailPage(csrf.token, decodeURIComponent(formId))
+          : renderSignupAdminPage(csrf.token),
+      );
+      response.headers.append("Set-Cookie", csrf.cookie);
+      return response;
+    }
+
+    if (pathname.startsWith(SIGNUP_ADMIN_BASE)) {
+      const user = await authenticate(request, env);
+      if (!user) return errorResponse(401, "unauthorized", "Sign in required.");
+      if (!(await hasPermission(env, user, SIGNUP_PERMISSION))) {
+        return errorResponse(
+          403,
+          "forbidden",
+          `The ${SIGNUP_PERMISSION} permission is required.`,
+        );
+      }
+      if (!["GET", "HEAD"].includes(request.method)) {
+        const csrfError = await validateMutationCsrf(request, env);
+        if (csrfError) return csrfError;
+      }
+      const csrf = await ensureCsrfToken(request, env);
+      return handleAdminSignupRequest(
+        request,
+        env,
+        user,
+        csrf instanceof Response
+          ? null
+          : { csrfToken: csrf.token, cookie: csrf.cookie },
+      );
     }
 
     // Calendar records are intentionally unavailable through SonicJS's generic
@@ -839,9 +900,10 @@ async function authenticate(
     : null;
 }
 
-async function hasCalendarPermission(
+async function hasPermission(
   env: CalendarBindings,
   user: AuthenticatedUser,
+  permissionName: string,
 ): Promise<boolean> {
   const row = await env.DB.prepare(
     `SELECT users.id
@@ -865,9 +927,16 @@ async function hasCalendarPermission(
        )
      LIMIT 1`,
   )
-    .bind(user.userId, CALENDAR_PERMISSION, CALENDAR_PERMISSION)
+    .bind(user.userId, permissionName, permissionName)
     .first<{ id: string }>();
   return Boolean(row);
+}
+
+async function hasCalendarPermission(
+  env: CalendarBindings,
+  user: AuthenticatedUser,
+): Promise<boolean> {
+  return hasPermission(env, user, CALENDAR_PERMISSION);
 }
 
 async function hasAdminAccess(
