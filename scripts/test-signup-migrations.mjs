@@ -136,6 +136,44 @@ try {
   }
   assert(aborted, "capacity trigger did not abort an oversubscribed claim");
 
+  // Test UPDATE trigger: raising an existing claim beyond capacity must abort.
+  // clm-1 is at quantity 2 on slt-1 (which needs 2), so updating it to 3 must abort.
+  let updateAborted = false;
+  try {
+    await execute(
+      `UPDATE signup_claims SET quantity = 3 WHERE id = 'clm-1';`,
+    );
+  } catch (error) {
+    updateAborted = /signup slot is full/.test(String(error));
+  }
+  assert(updateAborted, "capacity trigger did not abort an oversubscribed UPDATE");
+
+  // Test UPDATE trigger: raising an existing claim within capacity must succeed.
+  // This test verifies the trigger correctly excludes the row being updated from
+  // its own sum. Without the "AND id != NEW.id" clause, updating a claim of 1
+  // to quantity 3 on a slot needing 3 would compute SUM(quantity including self) + 3
+  // = 1 (new) + 3 (as new value) = 4 > 3 and abort wrongly. With the exclusion,
+  // it computes SUM(other rows) + 3 = 0 + 3 = 3, which succeeds.
+  await execute(
+    `INSERT INTO signup_slots (
+       id, form_id, position, label, quantity_needed, notes,
+       created_at, updated_at
+     ) VALUES ('slt-2', 'frm-1', 1, 'Chips', 3, NULL, 1, 1);
+     INSERT INTO signup_claims (id, response_id, slot_id, quantity, created_at)
+     VALUES ('clm-3', 'rsp-1', 'slt-2', 1, 1);`,
+  );
+  // This UPDATE should succeed because the trigger excludes clm-3 from its own sum.
+  await execute(`UPDATE signup_claims SET quantity = 3 WHERE id = 'clm-3';`);
+  const updated = JSON.parse(
+    await execute(
+      `SELECT quantity FROM signup_claims WHERE id = 'clm-3'`,
+    ),
+  );
+  assert(
+    updated.at(-1).results[0].quantity === 3,
+    "UPDATE did not persist: trigger may have incorrectly excluded another row",
+  );
+
   // Deleting a response releases its claims through the cascade.
   await execute(`DELETE FROM signup_responses WHERE id = 'rsp-1';`);
   const after = JSON.parse(
