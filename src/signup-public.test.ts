@@ -4,6 +4,7 @@ import {
   handlePublicSignupRequest,
   isPublicSignupPath,
 } from "./signup-public";
+import { hashSignupToken } from "./signups";
 import type { SignupBindings } from "./signups";
 
 const publicOrigin = "https://www.macon170.com";
@@ -430,6 +431,38 @@ describe("public signup routing", () => {
       .join("\n");
     expect(sql).toContain("UPDATE signup_responses SET token_hash");
     expect(sql).not.toContain("INSERT INTO signup_responses");
+  });
+
+  it("rate limits on the connecting IP even when the email keeps changing", async () => {
+    // The email arrives in the request body, so a key built from it is
+    // attacker-resettable. The IP-only bucket has to be consulted and
+    // enforced on its own.
+    const ipKey = await hashSignupToken("203.0.113.9");
+    const limit = vi.fn(async ({ key }: { key: string }) => ({
+      success: key !== ipKey,
+    }));
+    const request = new Request(
+      "https://cms.macon170.com/api/signups/v1/forms/lego-derby-food/responses",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: publicOrigin,
+          "CF-Connecting-IP": "203.0.113.9",
+        },
+        body: JSON.stringify({
+          ...validSubmission,
+          email: "never-seen-before@example.com",
+        }),
+      },
+    );
+    const response = await handlePublicSignupRequest(
+      request,
+      baseEnv({ SIGNUP_RATE_LIMITER: { limit } }),
+      turnstileOk,
+    );
+    expect(response.status).toBe(429);
+    expect(limit).toHaveBeenCalledWith({ key: ipKey });
   });
 
   it("reports 502 when the response saved but the email failed", async () => {

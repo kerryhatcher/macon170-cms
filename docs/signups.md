@@ -113,7 +113,11 @@ else.
 - Writes require the configured `PUBLIC_SITE_ORIGIN`, with explicit preflight
   behavior. Reads are allowed cross-origin.
 - A filled honeypot returns success and stores nothing.
-- `SIGNUP_RATE_LIMITER` keys on a hash of email plus connecting IP.
+- `SIGNUP_RATE_LIMITER` is checked twice per submission: once on a hash of the
+  connecting IP, and once on a hash of email plus connecting IP. Both buckets
+  must have budget. The IP-only bucket is what caps volume from one source,
+  since the email arrives in the request body and could otherwise be varied to
+  reset the budget.
 - Turnstile is verified server-side against the CMS secret, expected
   hostnames, and expected action, and fails closed: a siteverify response
   missing either the action or the hostname is treated as a failure, not

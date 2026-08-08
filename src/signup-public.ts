@@ -296,16 +296,25 @@ async function handleSubmission(
     );
   }
 
-  const rateKey = await hashSignupToken(
-    `${input.email}|${request.headers.get("CF-Connecting-IP") ?? "unknown"}`,
-  );
-  const limit = await env.SIGNUP_RATE_LIMITER.limit({ key: rateKey });
-  if (!limit.success) {
-    throw new SignupRequestError(
-      429,
-      "rate_limit",
-      "Too many signups were submitted. Wait a minute and try again.",
-    );
+  // Two buckets, both of which must have budget. The email-plus-IP key alone
+  // is attacker-resettable: the email comes from the request body, so varying
+  // it hands out a fresh bucket on every request. The IP-only key is the one
+  // that actually caps volume from a single source; the per-email key still
+  // slows a flood aimed at one address from many sources.
+  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  const rateKeys = await Promise.all([
+    hashSignupToken(ip),
+    hashSignupToken(`${input.email}|${ip}`),
+  ]);
+  for (const key of rateKeys) {
+    const limit = await env.SIGNUP_RATE_LIMITER.limit({ key });
+    if (!limit.success) {
+      throw new SignupRequestError(
+        429,
+        "rate_limit",
+        "Too many signups were submitted. Wait a minute and try again.",
+      );
+    }
   }
 
   await verifyTurnstile(token, request, env, fetchImpl);
