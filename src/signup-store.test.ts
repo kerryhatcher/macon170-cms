@@ -29,6 +29,18 @@ const formRow = {
   updated_at: 1,
 };
 
+// Decoy family columns the projection must never copy. They are deliberately
+// present in the mock rows: an assertion that the response lacks family data
+// proves nothing if the row it was built from never held any. A regression that
+// spreads the raw row into the public shape has to fail this test.
+const familyDecoys = {
+  email: "decoy@example.com",
+  family_name: "Decoy Family",
+  dietary_notes: "decoy peanut allergy",
+  adults: 9,
+  children: 9,
+};
+
 describe("public signup form projection", () => {
   it("exposes only counts and never family data", async () => {
     const db = {
@@ -41,6 +53,7 @@ describe("public signup form projection", () => {
           sql.includes("FROM signup_forms")
             ? {
                 ...formRow,
+                ...familyDecoys,
                 event_slug: "lego-derby",
                 event_title: "Lego Derby",
                 event_starts_at: "2027-03-01T18:00:00.000Z",
@@ -58,6 +71,7 @@ describe("public signup form projection", () => {
               created_at: 1,
               updated_at: 1,
               quantity_claimed: 2,
+              ...familyDecoys,
             },
           ],
         }),
@@ -82,6 +96,11 @@ describe("public signup form projection", () => {
     expect(serialized).not.toContain("dietary");
     expect(serialized).not.toContain("familyName");
     expect(serialized).not.toContain("adults");
+    // Catches a leak under either naming convention, camelCase or raw column.
+    expect(serialized).not.toContain("Decoy");
+    expect(serialized).not.toContain("decoy");
+    expect(serialized).not.toContain("family_name");
+    expect(serialized).not.toContain("children");
   });
 
   it("reports a passed deadline as closed while staying readable", async () => {
