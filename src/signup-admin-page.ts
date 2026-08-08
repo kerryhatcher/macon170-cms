@@ -4,13 +4,14 @@ import {
   renderAdminHeaderStyles,
 } from "./admin-header";
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+// Single choke point for every value interpolated into an inline <script>
+// in this file. JSON.stringify escapes quotes/backslashes but NOT "<", so a
+// value containing the literal text "</script>" can otherwise terminate the
+// element early and inject a sibling <script> that runs with the page's
+// privileges (and can read the non-HttpOnly CSRF cookie). Route every such
+// value through here — present and future — so none can miss the escape.
+function scriptSafeJson(value: unknown): string {
+  return JSON.stringify(value).replaceAll("<", "\\u003c");
 }
 
 // Shared shell for both signup admin pages, mirroring the doctype/head/style
@@ -23,16 +24,14 @@ function renderSignupShell(
   body: string,
   script: string,
 ): string {
-  // House pattern (matches calendar-admin-page.ts): escape "<" so the raw
-  // token can never break out of the inline <script> element.
-  const token = JSON.stringify(csrfToken).replaceAll("<", "\\u003c");
+  const token = scriptSafeJson(csrfToken);
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>${escapeHtml(title)} · Pack 170 CMS</title>
+<title>${title} · Pack 170 CMS</title>
 <style>
   :root { color-scheme: light; --blue: #003f87; --deep: #002b5c; --gold: #fcd116; --paper: #f7f1e3; --white: #fffdf7; --ink: #272b2e; --muted: #59636b; --rule: #d7cdb8; --red: #9b2c2c; --green: #28543f; font-family: "Segoe UI", sans-serif; }
   * { box-sizing: border-box; }
@@ -100,7 +99,7 @@ export function renderSignupAdminDetailPage(
   const body = `<main id="app">
   <p>Loading signup…</p>
 </main>`;
-  const script = `const FORM_ID = ${JSON.stringify(formId)};
+  const script = `const FORM_ID = ${scriptSafeJson(formId)};
 const app = document.querySelector('#app');
 
 function cell(row, text) {

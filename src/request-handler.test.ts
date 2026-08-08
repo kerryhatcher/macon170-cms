@@ -800,4 +800,35 @@ describe('signup admin routing', () => {
       'https://cms.macon170.com/auth/login?returnTo=%2Fadmin%2Fsignups',
     )
   })
+
+  it('rejects a non-UUID form id in the detail page path without echoing it', async () => {
+    const token = await AuthManager.generateToken(
+      'admin-1',
+      'admin@example.test',
+      'admin',
+      secret,
+    )
+    // The permission query finds a row, so a volunteer with signups.manage
+    // reaches the id check — which must still reject a non-UUID path segment.
+    const db = {
+      prepare: () => ({
+        bind() {
+          return this
+        },
+        first: async () => ({ id: 'admin-1' }),
+      }),
+    }
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request(
+        'https://cms.macon170.com/admin/signups/</script><script>alert(1)</script>',
+        { headers: { Cookie: `auth_token=${token}` } },
+      ),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+
+    expect(response.status).toBe(404)
+    const body = await response.text()
+    expect(body).not.toContain('<script>alert(1)</script>')
+  })
 })

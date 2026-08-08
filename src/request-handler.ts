@@ -82,6 +82,12 @@ const disabledAuthPaths = new Set([
   "/auth/register/form",
 ]);
 const managedTurnstilePluginPath = "/admin/plugins/turnstile";
+// Signup form ids are always crypto.randomUUID() (src/signup-store.ts). A
+// path segment that isn't one of these is never a real form, so it's
+// rejected as 404 before it ever reaches the page template — the outer wall
+// alongside the inline-script escaping in signup-admin-page.ts.
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const inviteUserPath = "/admin/invite-user";
 const resendInvitationPath = "/admin/resend-invitation/";
 const publicCache = "public, max-age=300";
@@ -317,12 +323,15 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
           `The ${SIGNUP_PERMISSION} permission is required.`,
         );
       }
+      const rawFormId = pathname.slice("/admin/signups/".length);
+      if (rawFormId && !uuidPattern.test(rawFormId)) {
+        return errorResponse(404, "not_found", "Signup not found.");
+      }
       const csrf = await ensureCsrfToken(request, env);
       if (csrf instanceof Response) return csrf;
-      const formId = pathname.slice("/admin/signups/".length);
       const response = htmlResponse(
-        formId
-          ? renderSignupAdminDetailPage(csrf.token, decodeURIComponent(formId))
+        rawFormId
+          ? renderSignupAdminDetailPage(csrf.token, rawFormId)
           : renderSignupAdminPage(csrf.token),
       );
       response.headers.append("Set-Cookie", csrf.cookie);
