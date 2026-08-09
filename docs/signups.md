@@ -49,6 +49,24 @@ left on the new revision with the old slot list, which surfaces to the
 volunteer as a failed save to retry, not as another volunteer's edit getting
 silently destroyed.
 
+## Publishing the link to families
+
+The public signup page is `https://www.macon170.com/signups/?form=<slug>`, where
+`<slug>` is the form's slug.
+
+**There is no automatic link from the event page.** The public API has no
+event-to-form lookup, so the event page cannot discover its own signup form.
+Paste the signup URL into the calendar event's **Registration URL** field —
+`/events/?event=<event-slug>` already renders that field as a link, so families
+reach the signup from the calendar with no further work.
+
+The magic-link edit page is `https://www.macon170.com/signups/edit/?token=…`.
+The CMS emails it. **Never build one of those URLs by hand and never paste one
+into a chat, an email, or a document:** the token in it lets whoever holds it
+read and change that family's response, including a child's dietary notes. If a
+family loses its link, have them submit the form again with the same email
+address — that rotates the token and re-sends the link.
+
 ## Public API
 
 All JSON is camelCase and includes `version: "v1"`.
