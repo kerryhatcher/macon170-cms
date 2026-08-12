@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { getPublicSignupForm, updateSignupForm } from "./signup-store";
-import { SignupConflictError, validateSignupFormInput } from "./signups";
+import { createSignupForm, getPublicSignupForm, updateSignupForm } from "./signup-store";
+import { SignupConflictError, SignupRequestError, validateSignupFormInput } from "./signups";
 import type { SignupBindings } from "./signups";
 
 const formInput = validateSignupFormInput({
@@ -643,5 +643,53 @@ describe("signup form updates", () => {
     expect(statements.some((sql) => sql.includes("DELETE FROM signup_slots"))).toBe(
       false,
     );
+  });
+});
+
+describe("event reference errors", () => {
+  it("maps a foreign-key violation on create to a validation error, not a throw-through", async () => {
+    const db = {
+      prepare: () => ({
+        bind() {
+          return this;
+        },
+        first: async () => null,
+      }),
+      batch: async () => {
+        throw new Error("D1_ERROR: FOREIGN KEY constraint failed");
+      },
+    };
+    await expect(
+      createSignupForm(
+        { DB: db } as unknown as SignupBindings,
+        formInput,
+        "admin-1",
+      ),
+    ).rejects.toBeInstanceOf(SignupRequestError);
+  });
+
+  it("maps a foreign-key violation on update to a validation error, not a throw-through", async () => {
+    const db = {
+      prepare: () => ({
+        bind() {
+          return this;
+        },
+        first: async () => formRow,
+        all: async () => ({ results: [] }),
+        run: async () => ({ meta: { changes: 1 } }),
+      }),
+      batch: async () => {
+        throw new Error("D1_ERROR: FOREIGN KEY constraint failed");
+      },
+    };
+    await expect(
+      updateSignupForm(
+        { DB: db } as unknown as SignupBindings,
+        "frm-1",
+        formInput,
+        formRow.revision,
+        "admin-1",
+      ),
+    ).rejects.toBeInstanceOf(SignupRequestError);
   });
 });

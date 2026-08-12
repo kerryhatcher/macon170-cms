@@ -4,6 +4,7 @@ import {
   SIGNUP_UNCONFIRMED_HOURS,
   SignupConflictError,
   SignupNotFoundError,
+  SignupRequestError,
   SignupSlotFullError,
   isSignupClosed,
 } from "./signups";
@@ -394,6 +395,13 @@ export async function createSignupForm(
       }),
     ]);
   } catch (error) {
+    if (isInvalidEventReference(error)) {
+      throw new SignupRequestError(
+        400,
+        "validation",
+        "That event no longer exists.",
+      );
+    }
     if (/UNIQUE constraint failed: signup_forms\.slug/.test(String(error))) {
       throw new SignupConflictError("Another signup already uses that slug.");
     }
@@ -479,6 +487,13 @@ export async function updateSignupForm(
     ]);
   } catch (error) {
     if (error instanceof SignupConflictError) throw error;
+    if (isInvalidEventReference(error)) {
+      throw new SignupRequestError(
+        400,
+        "validation",
+        "That event no longer exists.",
+      );
+    }
     if (/UNIQUE constraint failed: signup_forms\.slug/.test(String(error))) {
       throw new SignupConflictError("Another signup already uses that slug.");
     }
@@ -532,6 +547,10 @@ function isDuplicateEmail(error: unknown): boolean {
   return /UNIQUE constraint failed: signup_responses\.form_id/.test(
     String(error),
   );
+}
+
+function isInvalidEventReference(error: unknown): boolean {
+  return /FOREIGN KEY constraint failed/.test(String(error));
 }
 
 async function readClaims(
