@@ -10,8 +10,14 @@ import {
 } from "./signup-admin-page";
 
 // A minimal stand-in for a form/DOM element: just enough surface for the
-// signup-admin-page inline script to read/write against.
+// signup-admin-page inline script to read/write against. Extended (beyond
+// Task 5's plain field-value surface) with a real parent/child tree,
+// querySelector/querySelectorAll, remove(), and click() so the item-editor
+// script's slotRow()/currentSlotRows()/#add-slot wiring — which builds a real
+// row hierarchy and reads it back — can be driven end-to-end through the
+// actual shipped script, not just asserted against as static markup.
 interface FakeElement {
+  name: string;
   value: string;
   disabled: boolean;
   hidden: boolean;
@@ -19,13 +25,21 @@ interface FakeElement {
   className: string;
   type: string;
   dataset: Record<string, string>;
+  parentElement: FakeElement | null;
+  children: FakeElement[];
   addEventListener: (type: string, handler: (event: unknown) => unknown) => void;
-  append: (...children: unknown[]) => void;
-  replaceChildren: (...children: unknown[]) => void;
+  append: (...children: FakeElement[]) => void;
+  replaceChildren: (...children: FakeElement[]) => void;
+  remove: () => void;
+  click: () => void;
+  querySelector: (selector: string) => FakeElement | null;
+  querySelectorAll: (selector: string) => FakeElement[];
 }
 
 function makeFakeElement(): FakeElement {
-  return {
+  const listeners: Record<string, Array<(event: unknown) => unknown>> = {};
+  const self: FakeElement = {
+    name: "",
     value: "",
     disabled: false,
     hidden: false,
@@ -33,10 +47,48 @@ function makeFakeElement(): FakeElement {
     className: "",
     type: "",
     dataset: {},
-    addEventListener() {},
-    append() {},
-    replaceChildren() {},
+    parentElement: null,
+    children: [],
+    addEventListener(type, handler) {
+      (listeners[type] ??= []).push(handler);
+    },
+    append(...kids) {
+      for (const kid of kids) {
+        kid.parentElement = self;
+        self.children.push(kid);
+      }
+    },
+    replaceChildren(...kids) {
+      self.children = [];
+      self.append(...kids);
+    },
+    remove() {
+      if (self.parentElement) {
+        self.parentElement.children = self.parentElement.children.filter(
+          (child) => child !== self,
+        );
+        self.parentElement = null;
+      }
+    },
+    click() {
+      for (const handler of listeners.click ?? []) handler({});
+    },
+    querySelector(selector) {
+      // Only the one selector shape the shipped script actually uses on a
+      // row: '[name="fieldName"]'.
+      const match = /^\[name="([^"]+)"\]$/.exec(selector);
+      if (!match) return null;
+      return self.children.find((child) => child.name === match[1]) ?? null;
+    },
+    querySelectorAll(selector) {
+      // Only the one selector shape the shipped script actually uses on the
+      // slot list: '.slot-row'.
+      const className = selector.startsWith(".") ? selector.slice(1) : null;
+      if (!className) return [];
+      return self.children.filter((child) => child.className === className);
+    },
   };
+  return self;
 }
 
 interface FakeRequest {
@@ -65,6 +117,7 @@ function runSignupDetailScript(
     revision: number;
     slots: unknown[];
   },
+  loadedResponses: Array<{ claims: Array<{ slotId: string }> }> = [],
 ) {
   const match = html.match(/<script type="module">([\s\S]*?)<\/script>/);
   if (!match) throw new Error("module script not found in rendered page");
@@ -87,6 +140,7 @@ function runSignupDetailScript(
       settingsFormListeners[type] = handler;
     },
   };
+  const slotListEl = makeFakeElement();
   const byId: Record<string, unknown> = {
     "#notice": makeFakeElement(),
     "#settings-form": settingsFormEl,
@@ -95,9 +149,12 @@ function runSignupDetailScript(
     "#form-type": makeFakeElement(),
     "#slot-editor": makeFakeElement(),
     "#add-slot": makeFakeElement(),
-    "#slot-list": makeFakeElement(),
+    "#slot-list": slotListEl,
     "#responses": makeFakeElement(),
   };
+
+  const confirmCalls: string[] = [];
+  let confirmResult = true;
 
   const requests: FakeRequest[] = [];
   const fakeFetch = async (path: string, options: { method?: string; body?: string } = {}) => {
@@ -109,7 +166,7 @@ function runSignupDetailScript(
         status: 200,
         json: async () => ({
           form: loadedForm,
-          responses: [],
+          responses: loadedResponses,
           summary: { families: 0, attending: 0, adults: 0, children: 0, unconfirmed: 0 },
         }),
       };
@@ -147,12 +204,28 @@ function runSignupDetailScript(
     fetch: fakeFetch,
     FormData: FakeFormData,
     Headers,
-    window: { location: { href: "" } },
+    window: {
+      location: { href: "" },
+      confirm: (message: string) => {
+        confirmCalls.push(message);
+        return confirmResult;
+      },
+    },
   };
   vm.createContext(sandbox);
   vm.runInContext(script, sandbox);
 
-  return { eventSelectEl, settingsFormListeners, requests };
+  return {
+    eventSelectEl,
+    settingsFormListeners,
+    requests,
+    slotListEl,
+    elementsByName,
+    confirmCalls,
+    setConfirmResult: (result: boolean) => {
+      confirmResult = result;
+    },
+  };
 }
 
 describe("diffRemovedSlotIds", () => {
@@ -276,5 +349,109 @@ describe("renderSignupAdminDetailPage", () => {
     );
     expect(html).toContain('id="add-slot"');
     expect(html).toContain('id="slot-list"');
+  });
+
+  it("confirms before saving when removing an item that has claims", async () => {
+    const formId = "11111111-1111-4111-8111-111111111111";
+    const html = renderSignupAdminDetailPage("csrf-token", formId);
+    const loadedForm = {
+      id: formId,
+      title: "Fall Campout",
+      slug: "fall-campout",
+      state: "open",
+      instructions: "",
+      closesAt: null,
+      formType: "items",
+      eventId: "event-1",
+      revision: 3,
+      slots: [{ id: "slot-a", label: "Hot dogs", quantityNeeded: 20, notes: null }],
+    };
+    const loadedResponses = [
+      { claims: [{ slotId: "slot-a" }] },
+      { claims: [{ slotId: "slot-a" }] },
+    ];
+
+    const { slotListEl, settingsFormListeners, requests, confirmCalls } =
+      runSignupDetailScript(html, loadedForm, loadedResponses);
+
+    // Let loadForm() — which renders the slot editor from the loaded form —
+    // settle.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const rows = slotListEl.querySelectorAll(".slot-row");
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    expect(row.dataset.slotId).toBe("slot-a");
+
+    // Simulate clicking the row's Remove button, exactly as a volunteer
+    // would in the real DOM — not just deleting the row out from under the
+    // script.
+    const removeButton = row.children.find((child) => child.className === "danger");
+    expect(removeButton).toBeDefined();
+    removeButton?.click();
+    expect(slotListEl.querySelectorAll(".slot-row")).toHaveLength(0);
+
+    const submitHandler = settingsFormListeners.submit;
+    expect(typeof submitHandler).toBe("function");
+    await submitHandler({ preventDefault() {} });
+
+    expect(confirmCalls).toHaveLength(1);
+    expect(confirmCalls[0]).toContain("Hot dogs");
+    expect(confirmCalls[0]).toContain("2 families");
+
+    // Confirm defaults to accepted, so the save still goes through with the
+    // item gone from the payload.
+    const putRequest = requests.find((entry) => entry.method === "PUT");
+    expect(putRequest).toBeDefined();
+    const putBody = JSON.parse(putRequest?.body ?? "{}");
+    expect(putBody.slots).toEqual([]);
+  });
+
+  it("does not confirm when an existing item is only edited in place, not removed", async () => {
+    const formId = "11111111-1111-4111-8111-111111111111";
+    const html = renderSignupAdminDetailPage("csrf-token", formId);
+    const loadedForm = {
+      id: formId,
+      title: "Fall Campout",
+      slug: "fall-campout",
+      state: "open",
+      instructions: "",
+      closesAt: null,
+      formType: "items",
+      eventId: "event-1",
+      revision: 3,
+      slots: [{ id: "slot-a", label: "Hot dogs", quantityNeeded: 20, notes: null }],
+    };
+    const loadedResponses = [{ claims: [{ slotId: "slot-a" }] }];
+
+    const { slotListEl, settingsFormListeners, requests, confirmCalls } =
+      runSignupDetailScript(html, loadedForm, loadedResponses);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const rows = slotListEl.querySelectorAll(".slot-row");
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    expect(row.dataset.slotId).toBe("slot-a");
+
+    // Edit the label in place — same id, different value — the way a
+    // volunteer correcting a typo would, without removing the row.
+    const labelInput = row.querySelector('[name="label"]');
+    expect(labelInput).not.toBeNull();
+    labelInput!.value = "Hot dogs (bring buns too)";
+
+    const submitHandler = settingsFormListeners.submit;
+    await submitHandler({ preventDefault() {} });
+
+    expect(confirmCalls).toHaveLength(0);
+
+    const putRequest = requests.find((entry) => entry.method === "PUT");
+    expect(putRequest).toBeDefined();
+    const putBody = JSON.parse(putRequest?.body ?? "{}");
+    expect(putBody.slots).toEqual([
+      { id: "slot-a", label: "Hot dogs (bring buns too)", quantityNeeded: 20, notes: null },
+    ]);
   });
 });
