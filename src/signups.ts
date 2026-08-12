@@ -42,6 +42,7 @@ export type SignupSlot = {
 };
 
 export type SignupSlotInput = {
+  id?: string;
   position: number;
   label: string;
   quantityNeeded: number;
@@ -252,6 +253,10 @@ export function validateSignupFormInput(
             invalid("quantityNeeded");
           }
           return {
+            id:
+              typeof slot.id === "string" && slot.id.length > 0
+                ? slot.id
+                : undefined,
             position: index,
             label: text(slot.label, "label", 1, 120),
             quantityNeeded,
