@@ -14,6 +14,28 @@ function scriptSafeJson(value: unknown): string {
   return JSON.stringify(value).replaceAll("<", "\\u003c");
 }
 
+export function diffRemovedSlotIds(
+  loadedSlotIds: string[],
+  currentRows: Array<{ id?: string }>,
+): string[] {
+  const kept = new Set(
+    currentRows.map((row) => row.id).filter((id): id is string => Boolean(id)),
+  );
+  return loadedSlotIds.filter((id) => !kept.has(id));
+}
+
+export function countClaimedFamiliesBySlot(
+  responses: Array<{ claims: Array<{ slotId: string }> }>,
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const response of responses) {
+    for (const claim of response.claims) {
+      counts[claim.slotId] = (counts[claim.slotId] ?? 0) + 1;
+    }
+  }
+  return counts;
+}
+
 // Shared shell for both signup admin pages, mirroring the doctype/head/style
 // structure of calendar-admin-page.ts. Body markup and the page-specific
 // module script are supplied by each exported page function; the CSRF token
@@ -47,6 +69,8 @@ function renderSignupShell(
   ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
   li { border: 1px solid var(--rule); border-radius: .5rem; padding: .75rem; background: var(--white); }
   a { color: var(--blue); }
+  .toolbar { align-items: center; display: flex; gap: .75rem; justify-content: space-between; }
+  .new-form { background: var(--blue); border-radius: .4rem; color: white; display: inline-flex; align-items: center; font-weight: 700; min-block-size: 2.25rem; padding: .4rem .75rem; text-decoration: none; }
 </style>
 </head>
 <body>
@@ -62,8 +86,12 @@ ${script}
 }
 
 export function renderSignupAdminPage(csrfToken: string): string {
-  const body = `<main id="app">
-  <p>Loading signups…</p>
+  const body = `<main>
+  <div class="toolbar">
+    <h1>Signups</h1>
+    <a class="new-form" href="/admin/signups/new">New form</a>
+  </div>
+  <div id="app"><p>Loading signups…</p></div>
 </main>`;
   const script = `const app = document.querySelector('#app');
 const response = await fetch('/api/signups-admin/v1/forms', {
