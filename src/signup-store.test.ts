@@ -669,18 +669,26 @@ describe("event reference errors", () => {
   });
 
   it("maps a foreign-key violation on update to a validation error, not a throw-through", async () => {
+    // event_id is written in phase 1 — the guarded revision bump, a standalone
+    // .run() — not in the phase-2 batch(). So a stale eventId surfaces from
+    // that .run(), and the mock has to throw from there or the test only proves
+    // the mapping works for some *other* FK violation (a slot's form_id, say).
+    const batch = vi.fn().mockResolvedValue([]);
     const db = {
-      prepare: () => ({
+      prepare: (sql: string) => ({
         bind() {
           return this;
         },
         first: async () => formRow,
         all: async () => ({ results: [] }),
-        run: async () => ({ meta: { changes: 1 } }),
+        run: async () => {
+          if (sql.includes("UPDATE signup_forms")) {
+            throw new Error("D1_ERROR: FOREIGN KEY constraint failed");
+          }
+          return { meta: { changes: 1 } };
+        },
       }),
-      batch: async () => {
-        throw new Error("D1_ERROR: FOREIGN KEY constraint failed");
-      },
+      batch,
     };
     await expect(
       updateSignupForm(
@@ -691,5 +699,7 @@ describe("event reference errors", () => {
         "admin-1",
       ),
     ).rejects.toBeInstanceOf(SignupRequestError);
+    // Proof the rejection came from phase 1 rather than the batch.
+    expect(batch).not.toHaveBeenCalled();
   });
 });
