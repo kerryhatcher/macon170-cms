@@ -118,6 +118,14 @@ function runSignupDetailScript(
     slots: unknown[];
   },
   loadedResponses: Array<{ claims: Array<{ slotId: string }> }> = [],
+  // When provided, the calendar-admin event list resolves with these instead
+  // of the 403 the degrade-path tests rely on.
+  calendarEvents: Array<{
+    id: string;
+    title: string;
+    startsAt: string;
+    publicationState: string;
+  }> | null = null,
 ) {
   const match = html.match(/<script type="module">([\s\S]*?)<\/script>/);
   if (!match) throw new Error("module script not found in rendered page");
@@ -141,13 +149,14 @@ function runSignupDetailScript(
     },
   };
   const slotListEl = makeFakeElement();
+  const slotEditorEl = makeFakeElement();
   const byId: Record<string, unknown> = {
     "#notice": makeFakeElement(),
     "#settings-form": settingsFormEl,
     "#save": makeFakeElement(),
     "#event-select": eventSelectEl,
     "#form-type": makeFakeElement(),
-    "#slot-editor": makeFakeElement(),
+    "#slot-editor": slotEditorEl,
     "#add-slot": makeFakeElement(),
     "#slot-list": slotListEl,
     "#responses": makeFakeElement(),
@@ -172,6 +181,9 @@ function runSignupDetailScript(
       };
     }
     if (path === "/api/calendar-admin/v1/events") {
+      if (calendarEvents) {
+        return { ok: true, status: 200, json: async () => ({ events: calendarEvents }) };
+      }
       return {
         ok: false,
         status: 403,
@@ -220,6 +232,7 @@ function runSignupDetailScript(
     settingsFormListeners,
     requests,
     slotListEl,
+    slotEditorEl,
     elementsByName,
     confirmCalls,
     setConfirmResult: (result: boolean) => {
@@ -262,9 +275,18 @@ describe("countClaimedFamiliesBySlot", () => {
 });
 
 describe("renderSignupAdminPage", () => {
-  it("links to the new-signup route", () => {
-    const html = renderSignupAdminPage("csrf-token");
+  it("links to the new-signup route when the volunteer can create forms", () => {
+    const html = renderSignupAdminPage("csrf-token", true);
     expect(html).toContain('href="/admin/signups/new"');
+    expect(html).toContain("New form");
+  });
+
+  it("hides the new-form link from a volunteer without calendar.manage", () => {
+    // /admin/signups/new is gated on calendar.manage server-side, so offering
+    // the link to a signups-only volunteer just leads them to a raw JSON 403.
+    const html = renderSignupAdminPage("csrf-token", false);
+    expect(html).not.toContain('href="/admin/signups/new"');
+    expect(html).toContain("calendar.manage permission");
   });
 });
 
@@ -340,6 +362,103 @@ describe("renderSignupAdminDetailPage", () => {
     // currentForm fallback this would be undefined and the server would
     // reject the save — the exact bug the degrade path exists to avoid.
     expect(putBody.eventId).toBe("event-1");
+  });
+
+  it("disables the slot editor, not just hides it, when the form is not an items form", async () => {
+    // A hidden-but-enabled fieldset keeps its required item inputs in the
+    // form's constraint validation, so an empty label left behind by switching
+    // to RSVP makes the browser silently refuse to submit.
+    const formId = "11111111-1111-4111-8111-111111111111";
+    const html = renderSignupAdminDetailPage("csrf-token", formId);
+    const loadedForm = {
+      id: formId,
+      title: "Fall Campout",
+      slug: "fall-campout",
+      state: "open",
+      instructions: "",
+      closesAt: null,
+      formType: "rsvp",
+      eventId: "event-1",
+      revision: 3,
+      slots: [],
+    };
+
+    const { slotEditorEl } = runSignupDetailScript(html, loadedForm);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(slotEditorEl.hidden).toBe(true);
+    expect(slotEditorEl.disabled).toBe(true);
+  });
+
+  it("enables the slot editor for an items form", async () => {
+    const formId = "11111111-1111-4111-8111-111111111111";
+    const html = renderSignupAdminDetailPage("csrf-token", formId);
+    const loadedForm = {
+      id: formId,
+      title: "Fall Campout",
+      slug: "fall-campout",
+      state: "open",
+      instructions: "",
+      closesAt: null,
+      formType: "items",
+      eventId: "event-1",
+      revision: 3,
+      slots: [],
+    };
+
+    const { slotEditorEl } = runSignupDetailScript(html, loadedForm);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(slotEditorEl.hidden).toBe(false);
+    expect(slotEditorEl.disabled).toBe(false);
+  });
+
+  it("forces an explicit event choice in create mode and lists upcoming events first", async () => {
+    const html = renderSignupAdminDetailPage("csrf-token", null);
+    const past = new Date(Date.now() - 30 * 86400000).toISOString();
+    const older = new Date(Date.now() - 400 * 86400000).toISOString();
+    const soon = new Date(Date.now() + 7 * 86400000).toISOString();
+    const later = new Date(Date.now() + 30 * 86400000).toISOString();
+
+    const { eventSelectEl } = runSignupDetailScript(
+      html,
+      {
+        id: "unused",
+        title: "",
+        slug: "",
+        state: "draft",
+        instructions: "",
+        closesAt: null,
+        formType: "rsvp",
+        eventId: "",
+        revision: 0,
+        slots: [],
+      },
+      [],
+      [
+        { id: "older", title: "Older", startsAt: older, publicationState: "published" },
+        { id: "later", title: "Later", startsAt: later, publicationState: "published" },
+        { id: "past", title: "Past", startsAt: past, publicationState: "published" },
+        { id: "soon", title: "Soon", startsAt: soon, publicationState: "published" },
+      ],
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // An empty-valued first option is what makes the required <select> block a
+    // save that never picked an event; without it the browser pre-selects a
+    // real option and the signup silently lands on whatever sorted first.
+    expect(eventSelectEl.children[0]?.value).toBe("");
+    expect(eventSelectEl.children.map((option) => option.value)).toEqual([
+      "",
+      "soon",
+      "later",
+      "older",
+      "past",
+    ]);
   });
 
   it("renders the add-item button inside the slot editor", () => {

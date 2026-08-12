@@ -858,6 +858,65 @@ describe('signup admin routing', () => {
     await expect(response.text()).resolves.toContain('New signup form')
   })
 
+  it('hides the new-form link on the list page from a signups-only volunteer', async () => {
+    const token = await AuthManager.generateToken(
+      'editor-1',
+      'editor@example.test',
+      'editor',
+      secret,
+    )
+    let lastPermission: unknown
+    const db = {
+      prepare: () => ({
+        bind(...args: unknown[]) {
+          lastPermission = args[1]
+          return this
+        },
+        first: async () =>
+          lastPermission === 'signups.manage' ? { id: 'editor-1' } : null,
+      }),
+    }
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request('https://cms.macon170.com/admin/signups', {
+        headers: { Cookie: `auth_token=${token}` },
+      }),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+    expect(response.status).toBe(200)
+    const body = await response.text()
+    // The route behind the link is calendar.manage-gated, so offering it here
+    // would only hand this volunteer a raw JSON 403.
+    expect(body).not.toContain('href="/admin/signups/new"')
+    expect(body).toContain('calendar.manage permission')
+  })
+
+  it('shows the new-form link on the list page to a volunteer holding both permissions', async () => {
+    const token = await AuthManager.generateToken(
+      'admin-1',
+      'admin@example.test',
+      'admin',
+      secret,
+    )
+    const db = {
+      prepare: () => ({
+        bind() {
+          return this
+        },
+        first: async () => ({ id: 'admin-1' }),
+      }),
+    }
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request('https://cms.macon170.com/admin/signups', {
+        headers: { Cookie: `auth_token=${token}` },
+      }),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+    expect(response.status).toBe(200)
+    await expect(response.text()).resolves.toContain('href="/admin/signups/new"')
+  })
+
   it('requires calendar.manage to reach the new-signup route even with signups.manage', async () => {
     const token = await AuthManager.generateToken(
       'editor-1',

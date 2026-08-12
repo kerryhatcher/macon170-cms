@@ -339,6 +339,12 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
       } else if (rawFormId && !uuidPattern.test(rawFormId)) {
         return errorResponse(404, "not_found", "Signup not found.");
       }
+      // The list page's "New form" link points at the calendar.manage-gated
+      // route above, so the page needs to know whether this volunteer can
+      // actually follow it — otherwise the link leads to a raw JSON 403.
+      const canCreateForms = rawFormId
+        ? false
+        : await hasCalendarPermission(env, user);
       const csrf = await ensureCsrfToken(request, env);
       if (csrf instanceof Response) return csrf;
       const response = htmlResponse(
@@ -346,7 +352,7 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
           ? renderSignupAdminDetailPage(csrf.token, null)
           : rawFormId
             ? renderSignupAdminDetailPage(csrf.token, rawFormId)
-            : renderSignupAdminPage(csrf.token),
+            : renderSignupAdminPage(csrf.token, canCreateForms),
       );
       response.headers.append("Set-Cookie", csrf.cookie);
       return response;

@@ -60,17 +60,40 @@ function renderSignupShell(
   body { background: var(--paper); color: var(--ink); margin: 0; }
   ${renderAdminHeaderStyles()}
   main { display: grid; gap: 1.5rem; margin: 0 auto; max-width: 90rem; padding: 1.5rem; }
-  h1 { font-family: Montserrat, Arial, sans-serif; letter-spacing: -.035em; font-size: clamp(1.5rem, 3vw, 2.2rem); margin: 0; }
+  h1, h2 { font-family: Montserrat, Arial, sans-serif; letter-spacing: -.035em; margin: 0; }
+  h1 { font-size: clamp(1.5rem, 3vw, 2.2rem); }
+  h2 { font-size: 1.3rem; margin-bottom: 1rem; }
+  section { background: var(--white); border: 1px solid var(--rule); border-radius: .6rem 1rem .7rem .6rem; padding: 1.25rem; }
   table { border-collapse: collapse; width: 100%; }
   th, td { border-bottom: 1px solid var(--rule); padding: .5rem .65rem; text-align: left; font-size: .92rem; }
   th { font-weight: 800; }
+  td button + button { margin-inline-start: .4rem; }
   button { background: var(--blue); border: 0; border-radius: .4rem; color: white; cursor: pointer; font: inherit; font-weight: 700; min-block-size: 2.25rem; padding: .4rem .75rem; }
+  button.danger { background: var(--red); }
   button:disabled { cursor: progress; opacity: .65; }
   ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
   li { border: 1px solid var(--rule); border-radius: .5rem; padding: .75rem; background: var(--white); }
   a { color: var(--blue); }
+  form { display: grid; gap: 1rem; }
+  .grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  label { display: grid; font-weight: 700; gap: .4rem; }
+  label.wide { grid-column: 1 / -1; }
+  input, textarea, select { background: white; border: 1px solid #9b9589; border-radius: .35rem; color: var(--ink); font: inherit; min-block-size: 2.75rem; padding: .55rem .65rem; width: 100%; }
+  textarea { min-block-size: 6rem; resize: vertical; }
+  input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+  .actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+  .notice { border-inline-start: 4px solid var(--green); background: #dff0e5; padding: .8rem 1rem; }
+  .notice[data-kind="error"] { background: #fbe9e7; border-color: var(--red); }
+  fieldset { border: 1px solid var(--rule); border-radius: .5rem; margin: 0; min-inline-size: 0; padding: 1rem; }
+  fieldset .toolbar { margin-bottom: .75rem; }
+  #slot-list { display: grid; gap: .65rem; }
+  .slot-row { align-items: center; border: 1px solid var(--rule); border-radius: .5rem; display: grid; gap: .5rem; grid-template-columns: minmax(7rem, 3fr) 6rem minmax(7rem, 3fr) auto auto auto; padding: .65rem; }
+  .slot-row button { min-block-size: 2.25rem; padding: .4rem .6rem; }
+  .slot-row small { color: var(--muted); grid-column: 1 / -1; font-weight: 400; }
   .toolbar { align-items: center; display: flex; gap: .75rem; justify-content: space-between; }
   .new-form { background: var(--blue); border-radius: .4rem; color: white; display: inline-flex; align-items: center; font-weight: 700; min-block-size: 2.25rem; padding: .4rem .75rem; text-decoration: none; }
+  .hint { color: var(--muted); font-size: .9rem; margin: 0; max-width: 32rem; text-align: right; }
+  @media (max-width: 850px) { .grid, .slot-row { grid-template-columns: 1fr; } .slot-row small { grid-column: auto; } }
 </style>
 </head>
 <body>
@@ -85,11 +108,21 @@ ${script}
 </html>`;
 }
 
-export function renderSignupAdminPage(csrfToken: string): string {
+// `canCreateForms` is whether the signed-in volunteer also holds
+// calendar.manage. /admin/signups/new is gated on it server-side, so showing
+// the link to everyone handed a signups-only volunteer a raw JSON 403 instead
+// of the graceful degrade the rest of this feature provides.
+export function renderSignupAdminPage(
+  csrfToken: string,
+  canCreateForms: boolean,
+): string {
+  const createControl = canCreateForms
+    ? `<a class="new-form" href="/admin/signups/new">New form</a>`
+    : `<p class="hint">Creating a signup form also needs the calendar.manage permission — ask an administrator.</p>`;
   const body = `<main>
   <div class="toolbar">
     <h1>Signups</h1>
-    <a class="new-form" href="/admin/signups/new">New form</a>
+    ${createControl}
   </div>
   <div id="app"><p>Loading signups…</p></div>
 </main>`;
@@ -210,7 +243,16 @@ const localValue = (iso) => {
 const utcValue = (value) => (value ? new Date(value).toISOString() : null);
 
 function toggleSlotEditor(formType) {
-  document.querySelector('#slot-editor').hidden = formType !== 'items';
+  const editor = document.querySelector('#slot-editor');
+  const inactive = formType !== 'items';
+  editor.hidden = inactive;
+  // Disable, not just hide. A merely hidden required input still takes part in
+  // native form validation, so an empty item label left behind by switching to
+  // RSVP would make the browser refuse to submit with no notice shown and the
+  // submit handler never firing — a silent dead end. Disabling also drops the
+  // row inputs (label, quantityNeeded, notes) out of new FormData(settingsForm)
+  // when they don't apply, so they can't collide with the form's own fields.
+  editor.disabled = inactive;
 }
 formTypeSelect.addEventListener('change', (event) => toggleSlotEditor(event.target.value));
 
@@ -317,17 +359,40 @@ document.querySelector('#add-slot').addEventListener('click', () => {
 async function loadEventOptions(selectedEventId) {
   try {
     const data = await request('/api/calendar-admin/v1/events');
-    const upcoming = data.events
+    const now = new Date().getTime();
+    // Upcoming events first, then past ones, each group ascending. A plain
+    // ascending sort put the oldest archived-era event at the top, which is
+    // the worst possible default for a picker that attaches a new signup.
+    const sorted = data.events
       .filter((event) => event.publicationState !== 'archived' || event.id === selectedEventId)
-      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
-    eventSelect.replaceChildren(
-      ...upcoming.map((event) => {
-        const option = document.createElement('option');
-        option.value = event.id;
-        option.textContent = event.title + ' — ' + new Date(event.startsAt).toLocaleDateString();
-        return option;
-      }),
-    );
+      .sort((a, b) => {
+        const aStarts = new Date(a.startsAt).getTime();
+        const bStarts = new Date(b.startsAt).getTime();
+        const aUpcoming = aStarts >= now;
+        const bUpcoming = bStarts >= now;
+        if (aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1;
+        return aStarts - bStarts;
+      });
+    const options = sorted.map((event) => {
+      const option = document.createElement('option');
+      option.value = event.id;
+      option.textContent = event.title + ' — ' + new Date(event.startsAt).toLocaleDateString();
+      return option;
+    });
+    if (selectedEventId === null) {
+      // Create mode: force an explicit choice. Without an empty-valued first
+      // option the browser pre-selects a real event, so a volunteer could save
+      // without ever picking one and silently attach the signup to whatever
+      // sorted first. An empty value plus required on the <select> blocks the
+      // submit until a real event is chosen. Deliberately not disabled — a
+      // disabled option is not reliably selectable as the default across
+      // browsers, which is what makes required actually fire here.
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Choose an event…';
+      options.unshift(placeholder);
+    }
+    eventSelect.replaceChildren(...options);
     if (selectedEventId) eventSelect.value = selectedEventId;
     eventSelect.disabled = false;
   } catch (error) {
