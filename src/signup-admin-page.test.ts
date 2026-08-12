@@ -63,4 +63,21 @@ describe("renderSignupAdminDetailPage", () => {
     );
     expect(html).not.toContain("</script><script>");
   });
+
+  it("renders the settings panel with the event picker and a hidden slot editor", () => {
+    const html = renderSignupAdminDetailPage(
+      "csrf-token",
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expect(html).toContain('id="settings-form"');
+    expect(html).toContain('id="event-select"');
+    expect(html).toContain('id="slot-editor"');
+  });
+
+  it("renders create mode without a form id and without a response section", () => {
+    const html = renderSignupAdminDetailPage("csrf-token", null);
+    expect(html).toContain("New signup form");
+    expect(html).toContain("Create signup");
+    expect(html).not.toContain('id="responses-section"');
+  });
 });

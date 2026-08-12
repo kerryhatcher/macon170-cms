@@ -122,13 +122,76 @@ if (!response.ok) {
 
 export function renderSignupAdminDetailPage(
   csrfToken: string,
-  formId: string,
+  formId: string | null,
 ): string {
-  const body = `<main id="app">
-  <p>Loading signup…</p>
+  const mode = formId === null ? "create" : "edit";
+  const heading = mode === "create" ? "New signup form" : "Edit signup form";
+  const saveLabel = mode === "create" ? "Create signup" : "Save changes";
+  const responsesSection =
+    mode === "edit"
+      ? `<section aria-labelledby="responses-heading" id="responses-section">
+    <h2 id="responses-heading">Responses</h2>
+    <div id="responses">Loading responses…</div>
+  </section>`
+      : "";
+  const body = `<main>
+  <div class="toolbar">
+    <h1>${heading}</h1>
+    <a href="/admin/signups">← All signups</a>
+  </div>
+  <div id="notice" class="notice" hidden role="status"></div>
+  <section aria-labelledby="settings-heading">
+    <h2 id="settings-heading">Form settings</h2>
+    <form id="settings-form">
+      <div class="grid">
+        <label>Title<input name="title" required minlength="2" maxlength="120"></label>
+        <label>URL slug<input name="slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" maxlength="80"></label>
+        <label>Event<select name="eventId" id="event-select" required></select></label>
+        <label>State<select name="state"><option value="draft">Draft</option><option value="open">Open</option><option value="closed">Closed</option></select></label>
+        <label class="wide">Instructions<textarea name="instructions" maxlength="2000"></textarea></label>
+        <label>Closes at (optional)<input name="closesAt" type="datetime-local"></label>
+        <label>Form type<select name="formType" id="form-type"><option value="rsvp">RSVP (attendance only)</option><option value="items">Items (families claim what to bring)</option></select></label>
+      </div>
+      <fieldset id="slot-editor" hidden>
+        <div class="toolbar"><strong>Items</strong></div>
+        <div id="slot-list"></div>
+      </fieldset>
+      <div class="actions">
+        <button type="submit" id="save">${saveLabel}</button>
+      </div>
+    </form>
+  </section>
+  ${responsesSection}
 </main>`;
-  const script = `const FORM_ID = ${scriptSafeJson(formId)};
-const app = document.querySelector('#app');
+  const script = `const MODE = ${scriptSafeJson(mode)};
+const FORM_ID = ${scriptSafeJson(formId)};
+const notice = document.querySelector('#notice');
+const settingsForm = document.querySelector('#settings-form');
+const saveButton = document.querySelector('#save');
+const eventSelect = document.querySelector('#event-select');
+const formTypeSelect = document.querySelector('#form-type');
+
+let currentForm = null;
+
+function showNotice(message, kind) {
+  notice.textContent = message;
+  notice.dataset.kind = kind || 'message';
+  notice.hidden = false;
+}
+
+const request = async (path, options = {}) => {
+  const headers = new Headers(options.headers);
+  if (options.body) headers.set('Content-Type', 'application/json');
+  if (!['GET', 'HEAD'].includes(options.method || 'GET')) headers.set('X-CSRF-Token', CSRF);
+  const response = await fetch(path, { ...options, headers, credentials: 'same-origin' });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const error = new Error(payload?.error?.message || 'Signup request failed.');
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+};
 
 function cell(row, text) {
   const td = document.createElement('td');
@@ -136,37 +199,77 @@ function cell(row, text) {
   row.append(td);
 }
 
-async function load() {
-  const response = await fetch('/api/signups-admin/v1/forms/' + encodeURIComponent(FORM_ID), {
-    headers: { 'X-CSRF-Token': CSRF },
-    credentials: 'same-origin',
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    app.textContent = data.error?.message ?? 'Unable to load this signup.';
-    return;
+const localValue = (iso) => {
+  if (!iso) return '';
+  const date = new Date(iso);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
+const utcValue = (value) => (value ? new Date(value).toISOString() : null);
+
+function toggleSlotEditor(formType) {
+  document.querySelector('#slot-editor').hidden = formType !== 'items';
+}
+formTypeSelect.addEventListener('change', (event) => toggleSlotEditor(event.target.value));
+
+async function loadEventOptions(selectedEventId) {
+  try {
+    const data = await request('/api/calendar-admin/v1/events');
+    const upcoming = data.events
+      .filter((event) => event.publicationState !== 'archived' || event.id === selectedEventId)
+      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+    eventSelect.replaceChildren(
+      ...upcoming.map((event) => {
+        const option = document.createElement('option');
+        option.value = event.id;
+        option.textContent = event.title + ' — ' + new Date(event.startsAt).toLocaleDateString();
+        return option;
+      }),
+    );
+    if (selectedEventId) eventSelect.value = selectedEventId;
+    eventSelect.disabled = false;
+  } catch (error) {
+    if (error.status === 403 && selectedEventId) {
+      const option = document.createElement('option');
+      option.value = selectedEventId;
+      option.textContent = 'Current event (unchanged)';
+      eventSelect.replaceChildren(option);
+      eventSelect.disabled = true;
+      showNotice(
+        'Changing the event requires the calendar.manage permission — ask an administrator.',
+        'error',
+      );
+    } else {
+      throw error;
+    }
   }
+}
 
-  const heading = document.createElement('h1');
-  heading.textContent = data.form.title;
+function renderResponses(form, responses, summary) {
+  const container = document.querySelector('#responses');
+  if (!container) return;
+  container.replaceChildren();
 
-  const summary = document.createElement('p');
-  summary.textContent =
-    data.summary.families + ' families · ' +
-    data.summary.attending + ' attending · ' +
-    data.summary.adults + ' adults · ' +
-    data.summary.children + ' children · ' +
-    data.summary.unconfirmed + ' unconfirmed';
+  const summaryLine = document.createElement('p');
+  summaryLine.textContent =
+    summary.families + ' families · ' +
+    summary.attending + ' attending · ' +
+    summary.adults + ' adults · ' +
+    summary.children + ' children · ' +
+    summary.unconfirmed + ' unconfirmed';
+  container.append(summaryLine);
 
-  const slots = document.createElement('ul');
-  for (const slot of data.form.slots) {
-    const claimed = data.responses
-      .flatMap((entry) => entry.claims)
-      .filter((claim) => claim.slotId === slot.id)
-      .reduce((total, claim) => total + claim.quantity, 0);
-    const item = document.createElement('li');
-    item.textContent = slot.label + ': ' + claimed + ' of ' + slot.quantityNeeded + ' claimed';
-    slots.append(item);
+  if (form.formType === 'items') {
+    const slotSummary = document.createElement('ul');
+    for (const slot of form.slots) {
+      const claimedQuantity = responses
+        .flatMap((entry) => entry.claims)
+        .filter((claim) => claim.slotId === slot.id)
+        .reduce((total, claim) => total + claim.quantity, 0);
+      const item = document.createElement('li');
+      item.textContent = slot.label + ': ' + claimedQuantity + ' of ' + slot.quantityNeeded + ' claimed';
+      slotSummary.append(item);
+    }
+    container.append(slotSummary);
   }
 
   const table = document.createElement('table');
@@ -178,7 +281,7 @@ async function load() {
   }
   table.append(header);
 
-  for (const entry of data.responses) {
+  for (const entry of responses) {
     const row = document.createElement('tr');
     cell(row, entry.familyName);
     cell(row, entry.email);
@@ -196,33 +299,90 @@ async function load() {
     resend.textContent = 'Resend link';
     resend.addEventListener('click', async () => {
       resend.disabled = true;
-      await fetch('/api/signups-admin/v1/responses/' + encodeURIComponent(entry.id) + '/resend', {
-        method: 'POST',
-        headers: { 'X-CSRF-Token': CSRF },
-        credentials: 'same-origin',
-      });
+      await request('/api/signups-admin/v1/responses/' + encodeURIComponent(entry.id) + '/resend', { method: 'POST' });
       resend.textContent = 'Link sent';
     });
     const remove = document.createElement('button');
     remove.type = 'button';
+    remove.className = 'danger';
     remove.textContent = 'Delete';
     remove.addEventListener('click', async () => {
       remove.disabled = true;
-      await fetch('/api/signups-admin/v1/responses/' + encodeURIComponent(entry.id), {
-        method: 'DELETE',
-        headers: { 'X-CSRF-Token': CSRF },
-        credentials: 'same-origin',
-      });
-      await load();
+      await request('/api/signups-admin/v1/responses/' + encodeURIComponent(entry.id), { method: 'DELETE' });
+      await loadForm();
     });
     actions.append(resend, remove);
     row.append(actions);
     table.append(row);
   }
-
-  app.replaceChildren(heading, summary, slots, table);
+  container.append(table);
 }
 
-await load();`;
-  return renderSignupShell("Signup detail", csrfToken, body, script);
+function populateSettingsForm(form) {
+  settingsForm.elements.namedItem('title').value = form.title;
+  settingsForm.elements.namedItem('slug').value = form.slug;
+  settingsForm.elements.namedItem('state').value = form.state;
+  settingsForm.elements.namedItem('instructions').value = form.instructions;
+  settingsForm.elements.namedItem('closesAt').value = localValue(form.closesAt);
+  settingsForm.elements.namedItem('formType').value = form.formType;
+  toggleSlotEditor(form.formType);
+}
+
+async function loadForm() {
+  const data = await request('/api/signups-admin/v1/forms/' + encodeURIComponent(FORM_ID));
+  currentForm = data.form;
+  populateSettingsForm(currentForm);
+  renderResponses(currentForm, data.responses, data.summary);
+  await loadEventOptions(currentForm.eventId);
+}
+
+settingsForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const values = Object.fromEntries(new FormData(settingsForm).entries());
+  const payload = {
+    slug: values.slug,
+    eventId: values.eventId,
+    formType: values.formType,
+    title: values.title,
+    instructions: values.instructions,
+    state: values.state,
+    closesAt: utcValue(values.closesAt),
+    slots: [],
+  };
+
+  saveButton.disabled = true;
+  try {
+    if (MODE === 'create') {
+      const created = await request('/api/signups-admin/v1/forms', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      window.location.href = '/admin/signups/' + encodeURIComponent(created.form.id);
+      return;
+    }
+    await request('/api/signups-admin/v1/forms/' + encodeURIComponent(FORM_ID), {
+      method: 'PUT',
+      body: JSON.stringify({ ...payload, expectedRevision: currentForm.revision }),
+    });
+    showNotice('Signup saved.');
+    await loadForm();
+  } catch (error) {
+    showNotice(error.message, 'error');
+  } finally {
+    saveButton.disabled = false;
+  }
+});
+
+if (MODE === 'create') {
+  toggleSlotEditor('rsvp');
+  loadEventOptions(null).catch((error) => showNotice(error.message, 'error'));
+} else {
+  loadForm().catch((error) => showNotice(error.message, 'error'));
+}`;
+  return renderSignupShell(
+    mode === "create" ? "New signup" : "Signup detail",
+    csrfToken,
+    body,
+    script,
+  );
 }
