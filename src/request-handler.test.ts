@@ -831,4 +831,58 @@ describe('signup admin routing', () => {
     const body = await response.text()
     expect(body).not.toContain('<script>alert(1)</script>')
   })
+
+  it('serves the new-signup page to a volunteer holding both permissions', async () => {
+    const token = await AuthManager.generateToken(
+      'admin-1',
+      'admin@example.test',
+      'admin',
+      secret,
+    )
+    const db = {
+      prepare: () => ({
+        bind() {
+          return this
+        },
+        first: async () => ({ id: 'admin-1' }),
+      }),
+    }
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request('https://cms.macon170.com/admin/signups/new', {
+        headers: { Cookie: `auth_token=${token}` },
+      }),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+    expect(response.status).toBe(200)
+    await expect(response.text()).resolves.toContain('New signup form')
+  })
+
+  it('requires calendar.manage to reach the new-signup route even with signups.manage', async () => {
+    const token = await AuthManager.generateToken(
+      'editor-1',
+      'editor@example.test',
+      'editor',
+      secret,
+    )
+    let lastPermission: unknown
+    const db = {
+      prepare: () => ({
+        bind(...args: unknown[]) {
+          lastPermission = args[1]
+          return this
+        },
+        first: async () =>
+          lastPermission === 'signups.manage' ? { id: 'editor-1' } : null,
+      }),
+    }
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request('https://cms.macon170.com/admin/signups/new', {
+        headers: { Cookie: `auth_token=${token}` },
+      }),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+    expect(response.status).toBe(403)
+  })
 })

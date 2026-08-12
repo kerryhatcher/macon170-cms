@@ -324,15 +324,29 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
         );
       }
       const rawFormId = pathname.slice("/admin/signups/".length);
-      if (rawFormId && !uuidPattern.test(rawFormId)) {
+      const isNew = rawFormId === "new";
+      if (isNew) {
+        // Creating a form always requires picking an event, and the picker
+        // reuses the calendar-admin API — unlike editing, there is no
+        // degraded path here for a signups-only volunteer.
+        if (!(await hasCalendarPermission(env, user))) {
+          return errorResponse(
+            403,
+            "forbidden",
+            `The ${CALENDAR_PERMISSION} permission is required to attach a signup to an event.`,
+          );
+        }
+      } else if (rawFormId && !uuidPattern.test(rawFormId)) {
         return errorResponse(404, "not_found", "Signup not found.");
       }
       const csrf = await ensureCsrfToken(request, env);
       if (csrf instanceof Response) return csrf;
       const response = htmlResponse(
-        rawFormId
-          ? renderSignupAdminDetailPage(csrf.token, rawFormId)
-          : renderSignupAdminPage(csrf.token),
+        isNew
+          ? renderSignupAdminDetailPage(csrf.token, null)
+          : rawFormId
+            ? renderSignupAdminDetailPage(csrf.token, rawFormId)
+            : renderSignupAdminPage(csrf.token),
       );
       response.headers.append("Set-Cookie", csrf.cookie);
       return response;
