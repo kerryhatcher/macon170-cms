@@ -324,15 +324,35 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
         );
       }
       const rawFormId = pathname.slice("/admin/signups/".length);
-      if (rawFormId && !uuidPattern.test(rawFormId)) {
+      const isNew = rawFormId === "new";
+      if (isNew) {
+        // Creating a form always requires picking an event, and the picker
+        // reuses the calendar-admin API — unlike editing, there is no
+        // degraded path here for a signups-only volunteer.
+        if (!(await hasCalendarPermission(env, user))) {
+          return errorResponse(
+            403,
+            "forbidden",
+            `The ${CALENDAR_PERMISSION} permission is required to attach a signup to an event.`,
+          );
+        }
+      } else if (rawFormId && !uuidPattern.test(rawFormId)) {
         return errorResponse(404, "not_found", "Signup not found.");
       }
+      // The list page's "New form" link points at the calendar.manage-gated
+      // route above, so the page needs to know whether this volunteer can
+      // actually follow it — otherwise the link leads to a raw JSON 403.
+      const canCreateForms = rawFormId
+        ? false
+        : await hasCalendarPermission(env, user);
       const csrf = await ensureCsrfToken(request, env);
       if (csrf instanceof Response) return csrf;
       const response = htmlResponse(
-        rawFormId
-          ? renderSignupAdminDetailPage(csrf.token, rawFormId)
-          : renderSignupAdminPage(csrf.token),
+        isNew
+          ? renderSignupAdminDetailPage(csrf.token, null)
+          : rawFormId
+            ? renderSignupAdminDetailPage(csrf.token, rawFormId)
+            : renderSignupAdminPage(csrf.token, canCreateForms),
       );
       response.headers.append("Set-Cookie", csrf.cookie);
       return response;
@@ -360,6 +380,7 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
         csrf instanceof Response
           ? null
           : { csrfToken: csrf.token, cookie: csrf.cookie },
+        await hasCalendarPermission(env, user),
       );
     }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { getPublicSignupForm, updateSignupForm } from "./signup-store";
-import { SignupConflictError, validateSignupFormInput } from "./signups";
+import { createSignupForm, getPublicSignupForm, updateSignupForm } from "./signup-store";
+import { SignupConflictError, SignupRequestError, validateSignupFormInput } from "./signups";
 import type { SignupBindings } from "./signups";
 
 const formInput = validateSignupFormInput({
@@ -172,11 +172,9 @@ describe("signup form updates", () => {
     expect(batch).not.toHaveBeenCalled();
   });
 
-  it("bumps the revision and replaces slots in one batch", async () => {
+  it("bumps the revision and inserts new slots in one batch", async () => {
     const statements: string[] = [];
     const batch = vi.fn().mockResolvedValue([]);
-    // The pre-write conflict check must see the *current* revision (matching
-    // expectedRevision); only the post-write re-fetch should see the bump.
     let firstCalls = 0;
     const db = {
       prepare: (sql: string) => {
@@ -204,19 +202,20 @@ describe("signup form updates", () => {
       "admin-1",
     );
     expect(batch).toHaveBeenCalledOnce();
-    expect(statements.some((sql) => sql.includes("DELETE FROM signup_slots"))).toBe(
-      true,
-    );
-    expect(statements.some((sql) => sql.includes("INSERT INTO signup_audit"))).toBe(
-      true,
-    );
+    expect(
+      statements.some((sql) => sql.includes("INSERT INTO signup_slots")),
+    ).toBe(true);
+    expect(
+      statements.some((sql) => sql.includes("INSERT INTO signup_audit")),
+    ).toBe(true);
     expect(updated.revision).toBe(3);
   });
 
-  it("keeps the stored slots when a save changes only form metadata", async () => {
-    // A volunteer fixing a typo in the title sends the same slot list back.
-    // Replacing slots here would cascade every family's claims away, so the
-    // DELETE must not be issued at all.
+  it("keeps the stored slot row when a save changes only form metadata", async () => {
+    // A volunteer fixing a typo in the title submits the same slot, by id.
+    // Reconciling by id must recognize it as unchanged and skip the UPDATE
+    // as well as any DELETE/INSERT — a title-only save must never touch
+    // signup_slots at all.
     const statements: string[] = [];
     const batch = vi.fn().mockResolvedValue([]);
     let firstCalls = 0;
@@ -251,20 +250,35 @@ describe("signup form updates", () => {
     await updateSignupForm(
       { DB: db } as unknown as SignupBindings,
       "frm-1",
-      { ...formInput, title: "Lego Derby food (fixed)" },
+      {
+        ...formInput,
+        slots: [
+          {
+            id: "slt-1",
+            position: 0,
+            label: "Hot dog buns",
+            quantityNeeded: 3,
+            notes: null,
+          },
+        ],
+        title: "Lego Derby food (fixed)",
+      },
       formRow.revision,
       "admin-1",
     );
     expect(batch).toHaveBeenCalledOnce();
-    expect(statements.some((sql) => sql.includes("DELETE FROM signup_slots"))).toBe(
-      false,
-    );
-    expect(statements.some((sql) => sql.includes("INSERT INTO signup_slots"))).toBe(
-      false,
-    );
-    expect(statements.some((sql) => sql.includes("INSERT INTO signup_audit"))).toBe(
-      true,
-    );
+    expect(
+      statements.some((sql) => sql.includes("DELETE FROM signup_slots")),
+    ).toBe(false);
+    expect(
+      statements.some((sql) => sql.includes("INSERT INTO signup_slots")),
+    ).toBe(false);
+    expect(
+      statements.some((sql) => sql.includes("UPDATE signup_slots")),
+    ).toBe(false);
+    expect(
+      statements.some((sql) => sql.includes("INSERT INTO signup_audit")),
+    ).toBe(true);
   });
 
   it("replaces slots when the submitted item list differs", async () => {
@@ -317,6 +331,281 @@ describe("signup form updates", () => {
     );
   });
 
+  it("inserts a new slot without touching an existing one's row", async () => {
+    // The bug this fixes: adding "napkins" to an open items form used to
+    // replace the entire slot list, cascading every family's claims via
+    // ON DELETE CASCADE — not just claims on the new row. Reconciling by id
+    // means the existing slot's row is neither deleted nor updated.
+    const statements: string[] = [];
+    const batch = vi.fn().mockResolvedValue([]);
+    let firstCalls = 0;
+    const storedSlot = {
+      id: "slt-1",
+      form_id: "frm-1",
+      position: 0,
+      label: "Hot dog buns",
+      quantity_needed: 3,
+      notes: null,
+      created_at: 1,
+      updated_at: 1,
+    };
+    const db = {
+      prepare: (sql: string) => {
+        statements.push(sql);
+        return {
+          sql,
+          bind() {
+            return this;
+          },
+          first: async () => {
+            firstCalls += 1;
+            return firstCalls === 1 ? formRow : { ...formRow, revision: 3 };
+          },
+          all: async () => ({ results: [storedSlot] }),
+          run: async () => ({ meta: { changes: 1 } }),
+        };
+      },
+      batch,
+    };
+    await updateSignupForm(
+      { DB: db } as unknown as SignupBindings,
+      "frm-1",
+      {
+        ...formInput,
+        slots: [
+          {
+            id: "slt-1",
+            position: 0,
+            label: "Hot dog buns",
+            quantityNeeded: 3,
+            notes: null,
+          },
+          { position: 1, label: "Napkins", quantityNeeded: 2, notes: null },
+        ],
+      },
+      formRow.revision,
+      "admin-1",
+    );
+    expect(
+      statements.some((sql) => sql.includes("DELETE FROM signup_slots")),
+    ).toBe(false);
+    expect(
+      statements.some((sql) => sql.includes("UPDATE signup_slots")),
+    ).toBe(false);
+    expect(
+      statements.some((sql) => sql.includes("INSERT INTO signup_slots")),
+    ).toBe(true);
+  });
+
+  it("removes only the deleted slot, leaving another slot's row untouched", async () => {
+    const statements: Array<{ sql: string; args: unknown[] }> = [];
+    const batch = vi.fn().mockResolvedValue([]);
+    let firstCalls = 0;
+    const keptSlot = {
+      id: "slt-keep",
+      form_id: "frm-1",
+      position: 0,
+      label: "Hot dog buns",
+      quantity_needed: 3,
+      notes: null,
+      created_at: 1,
+      updated_at: 1,
+    };
+    const removedSlot = {
+      id: "slt-remove",
+      form_id: "frm-1",
+      position: 1,
+      label: "Drinks",
+      quantity_needed: 2,
+      notes: null,
+      created_at: 1,
+      updated_at: 1,
+    };
+    const db = {
+      prepare: (sql: string) => {
+        const call = { sql, args: [] as unknown[] };
+        statements.push(call);
+        return {
+          sql,
+          bind(...args: unknown[]) {
+            call.args = args;
+            return this;
+          },
+          first: async () => {
+            firstCalls += 1;
+            return firstCalls === 1 ? formRow : { ...formRow, revision: 3 };
+          },
+          all: async () => ({ results: [keptSlot, removedSlot] }),
+          run: async () => ({ meta: { changes: 1 } }),
+        };
+      },
+      batch,
+    };
+    await updateSignupForm(
+      { DB: db } as unknown as SignupBindings,
+      "frm-1",
+      {
+        ...formInput,
+        slots: [
+          {
+            id: "slt-keep",
+            position: 0,
+            label: "Hot dog buns",
+            quantityNeeded: 3,
+            notes: null,
+          },
+        ],
+      },
+      formRow.revision,
+      "admin-1",
+    );
+    const deletes = statements.filter((call) =>
+      call.sql.includes("DELETE FROM signup_slots"),
+    );
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0]?.args).toContain("slt-remove");
+    expect(
+      statements.some(
+        (call) =>
+          call.sql.includes("DELETE FROM signup_slots") &&
+          call.args.includes("slt-keep"),
+      ),
+    ).toBe(false);
+  });
+
+  it("updates a slot in place by id instead of deleting and reinserting it", async () => {
+    const statements: Array<{ sql: string; args: unknown[] }> = [];
+    const batch = vi.fn().mockResolvedValue([]);
+    let firstCalls = 0;
+    const storedSlot = {
+      id: "slt-1",
+      form_id: "frm-1",
+      position: 0,
+      label: "Hot dog buns",
+      quantity_needed: 3,
+      notes: null,
+      created_at: 1,
+      updated_at: 1,
+    };
+    const db = {
+      prepare: (sql: string) => {
+        const call = { sql, args: [] as unknown[] };
+        statements.push(call);
+        return {
+          sql,
+          bind(...args: unknown[]) {
+            call.args = args;
+            return this;
+          },
+          first: async () => {
+            firstCalls += 1;
+            return firstCalls === 1 ? formRow : { ...formRow, revision: 3 };
+          },
+          all: async () => ({ results: [storedSlot] }),
+          run: async () => ({ meta: { changes: 1 } }),
+        };
+      },
+      batch,
+    };
+    await updateSignupForm(
+      { DB: db } as unknown as SignupBindings,
+      "frm-1",
+      {
+        ...formInput,
+        slots: [
+          {
+            id: "slt-1",
+            position: 0,
+            label: "Hot dog rolls",
+            quantityNeeded: 4,
+            notes: null,
+          },
+        ],
+      },
+      formRow.revision,
+      "admin-1",
+    );
+    expect(
+      statements.some((call) => call.sql.includes("DELETE FROM signup_slots")),
+    ).toBe(false);
+    const updates = statements.filter((call) =>
+      call.sql.includes("UPDATE signup_slots"),
+    );
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.args).toContain("Hot dog rolls");
+    expect(updates[0]?.args).toContain(4);
+  });
+
+  it("removes every slot when the form type switches from items to rsvp", async () => {
+    // validateSignupFormInput forces slots: [] for formType "rsvp"
+    // (signups.ts:238-239), so this is the one case that is still fully
+    // destructive by nature, not by a wholesale-replace bug: there is
+    // nothing left for any slot id to match, so every existing slot is a
+    // removal.
+    const statements: Array<{ sql: string; args: unknown[] }> = [];
+    const batch = vi.fn().mockResolvedValue([]);
+    let firstCalls = 0;
+    const storedSlots = [
+      {
+        id: "slt-1",
+        form_id: "frm-1",
+        position: 0,
+        label: "Hot dog buns",
+        quantity_needed: 3,
+        notes: null,
+        created_at: 1,
+        updated_at: 1,
+      },
+      {
+        id: "slt-2",
+        form_id: "frm-1",
+        position: 1,
+        label: "Drinks",
+        quantity_needed: 2,
+        notes: null,
+        created_at: 1,
+        updated_at: 1,
+      },
+    ];
+    const db = {
+      prepare: (sql: string) => {
+        const call = { sql, args: [] as unknown[] };
+        statements.push(call);
+        return {
+          sql,
+          bind(...args: unknown[]) {
+            call.args = args;
+            return this;
+          },
+          first: async () => {
+            firstCalls += 1;
+            return firstCalls === 1 ? formRow : { ...formRow, revision: 3 };
+          },
+          all: async () => ({ results: storedSlots }),
+          run: async () => ({ meta: { changes: 1 } }),
+        };
+      },
+      batch,
+    };
+    await updateSignupForm(
+      { DB: db } as unknown as SignupBindings,
+      "frm-1",
+      { ...formInput, formType: "rsvp", slots: [] },
+      formRow.revision,
+      "admin-1",
+    );
+    const deletes = statements.filter((call) =>
+      call.sql.includes("DELETE FROM signup_slots"),
+    );
+    expect(deletes).toHaveLength(2);
+    expect(deletes.map((call) => call.args[0])).toEqual(
+      expect.arrayContaining(["slt-1", "slt-2"]),
+    );
+    expect(
+      statements.some((call) => call.sql.includes("INSERT INTO signup_slots")),
+    ).toBe(false);
+  });
+
   it("rejects a losing racer without touching slots (TOCTOU guard)", async () => {
     // Two volunteers both read revision 2 and pass the pre-check. The
     // winner's guarded UPDATE already bumped the row to revision 3, so this
@@ -354,5 +643,63 @@ describe("signup form updates", () => {
     expect(statements.some((sql) => sql.includes("DELETE FROM signup_slots"))).toBe(
       false,
     );
+  });
+});
+
+describe("event reference errors", () => {
+  it("maps a foreign-key violation on create to a validation error, not a throw-through", async () => {
+    const db = {
+      prepare: () => ({
+        bind() {
+          return this;
+        },
+        first: async () => null,
+      }),
+      batch: async () => {
+        throw new Error("D1_ERROR: FOREIGN KEY constraint failed");
+      },
+    };
+    await expect(
+      createSignupForm(
+        { DB: db } as unknown as SignupBindings,
+        formInput,
+        "admin-1",
+      ),
+    ).rejects.toBeInstanceOf(SignupRequestError);
+  });
+
+  it("maps a foreign-key violation on update to a validation error, not a throw-through", async () => {
+    // event_id is written in phase 1 — the guarded revision bump, a standalone
+    // .run() — not in the phase-2 batch(). So a stale eventId surfaces from
+    // that .run(), and the mock has to throw from there or the test only proves
+    // the mapping works for some *other* FK violation (a slot's form_id, say).
+    const batch = vi.fn().mockResolvedValue([]);
+    const db = {
+      prepare: (sql: string) => ({
+        bind() {
+          return this;
+        },
+        first: async () => formRow,
+        all: async () => ({ results: [] }),
+        run: async () => {
+          if (sql.includes("UPDATE signup_forms")) {
+            throw new Error("D1_ERROR: FOREIGN KEY constraint failed");
+          }
+          return { meta: { changes: 1 } };
+        },
+      }),
+      batch,
+    };
+    await expect(
+      updateSignupForm(
+        { DB: db } as unknown as SignupBindings,
+        "frm-1",
+        formInput,
+        formRow.revision,
+        "admin-1",
+      ),
+    ).rejects.toBeInstanceOf(SignupRequestError);
+    // Proof the rejection came from phase 1 rather than the batch.
+    expect(batch).not.toHaveBeenCalled();
   });
 });

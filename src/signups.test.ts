@@ -87,6 +87,18 @@ describe("signup form validation", () => {
       }),
     ).toThrow("quantityNeeded");
   });
+
+  it("passes an existing slot's id through unchanged and drops an empty one", () => {
+    const result = validateSignupFormInput({
+      ...formInput,
+      slots: [
+        { id: "slot-1", label: "Hot dog buns", quantityNeeded: 3, notes: null },
+        { id: "", label: "Drinks", quantityNeeded: 2, notes: null },
+      ],
+    });
+    expect(result.slots[0]?.id).toBe("slot-1");
+    expect(result.slots[1]?.id).toBeUndefined();
+  });
 });
 
 describe("signup response validation", () => {

@@ -4,6 +4,7 @@ import {
   SIGNUP_UNCONFIRMED_HOURS,
   SignupConflictError,
   SignupNotFoundError,
+  SignupRequestError,
   SignupSlotFullError,
   isSignupClosed,
 } from "./signups";
@@ -258,13 +259,13 @@ export async function getPublicSignupForm(
   };
 }
 
-function slotStatements(
+function insertSlotStatements(
   env: SignupBindings,
   formId: string,
-  input: SignupFormInput,
+  slots: SignupSlotInput[],
   now: number,
 ) {
-  return input.slots.map((slot) =>
+  return slots.map((slot) =>
     env.DB.prepare(
       `INSERT INTO signup_slots
          (id, form_id, position, label, quantity_needed, notes,
@@ -283,26 +284,82 @@ function slotStatements(
   );
 }
 
-// Slots are compared by their meaning, not by id: slotStatements mints a fresh
-// uuid per row, so a save that reinserts an identical list would still cascade
-// every family's claims away. Both sides are ordered by position (readSlots
-// sorts, validateSignupFormInput assigns position by index).
-function slotsUnchanged(
+type SignupSlotDiff = {
+  toInsert: SignupSlotInput[];
+  toUpdate: Array<{ id: string; slot: SignupSlotInput }>;
+  toRemove: SignupSlot[];
+};
+
+// Reconciles the submitted slot list against the stored one by id, so a save
+// only touches the rows that actually changed. A slot id absent from the
+// submitted list is the only case that removes a row and, via ON DELETE
+// CASCADE on signup_claims.slot_id, its claims — editing a kept slot's
+// label/quantity/notes/position never touches signup_claims. Claim labels
+// are joined live from signup_slots at read time (see readClaims below), so
+// renaming a slot here needs no follow-up write on signup_claims.
+function diffSignupSlots(
   existing: SignupSlot[],
   input: SignupSlotInput[],
-): boolean {
-  return (
-    existing.length === input.length &&
-    existing.every((slot, index) => {
-      const next = input[index];
-      return (
-        slot.position === next.position &&
-        slot.label === next.label &&
-        slot.quantityNeeded === next.quantityNeeded &&
-        slot.notes === next.notes
-      );
-    })
-  );
+): SignupSlotDiff {
+  const existingById = new Map(existing.map((slot) => [slot.id, slot]));
+  const keptIds = new Set<string>();
+  const toInsert: SignupSlotInput[] = [];
+  const toUpdate: Array<{ id: string; slot: SignupSlotInput }> = [];
+
+  for (const slot of input) {
+    const stored = slot.id ? existingById.get(slot.id) : undefined;
+    if (!stored) {
+      toInsert.push(slot);
+      continue;
+    }
+    keptIds.add(stored.id);
+    if (
+      stored.position !== slot.position ||
+      stored.label !== slot.label ||
+      stored.quantityNeeded !== slot.quantityNeeded ||
+      stored.notes !== slot.notes
+    ) {
+      toUpdate.push({ id: stored.id, slot });
+    }
+  }
+
+  return {
+    toInsert,
+    toUpdate,
+    toRemove: existing.filter((slot) => !keptIds.has(slot.id)),
+  };
+}
+
+function slotDiffStatements(
+  env: SignupBindings,
+  formId: string,
+  diff: SignupSlotDiff,
+  now: number,
+) {
+  return [
+    ...diff.toRemove.map((slot) =>
+      env.DB.prepare(
+        `DELETE FROM signup_slots WHERE id = ? AND form_id = ?`,
+      ).bind(slot.id, formId),
+    ),
+    ...diff.toUpdate.map(({ id, slot }) =>
+      env.DB.prepare(
+        `UPDATE signup_slots
+         SET position = ?, label = ?, quantity_needed = ?, notes = ?,
+             updated_at = ?
+         WHERE id = ? AND form_id = ?`,
+      ).bind(
+        slot.position,
+        slot.label,
+        slot.quantityNeeded,
+        slot.notes,
+        now,
+        id,
+        formId,
+      ),
+    ),
+    ...insertSlotStatements(env, formId, diff.toInsert, now),
+  ];
 }
 
 export async function createSignupForm(
@@ -331,13 +388,20 @@ export async function createSignupForm(
         now,
         now,
       ),
-      ...slotStatements(env, id, input, now),
+      ...insertSlotStatements(env, id, input.slots, now),
       recordSignupAudit(env, "form", id, "created", actorId, {
         slug: input.slug,
         formType: input.formType,
       }),
     ]);
   } catch (error) {
+    if (isInvalidEventReference(error)) {
+      throw new SignupRequestError(
+        400,
+        "validation",
+        "That event no longer exists.",
+      );
+    }
     if (/UNIQUE constraint failed: signup_forms\.slug/.test(String(error))) {
       throw new SignupConflictError("Another signup already uses that slug.");
     }
@@ -397,34 +461,39 @@ export async function updateSignupForm(
     }
 
     // Phase 2: only reached if this call won the revision bump. Slots are
-    // replaced wholesale, but only when the submitted list actually differs
-    // from the stored one. Claims reference slots with ON DELETE CASCADE, so
-    // replacing an unchanged list would destroy every family's claims on a
-    // title-only or open/closed-only save. Editing the item list itself is
-    // still destructive by design (documented in docs/signups.md). Accepted
-    // trade-off: if this second batch fails after phase 1 committed, the form
-    // carries the new revision with the old slot list — a failed edit the
-    // volunteer retries with the fresh revision, not cross-volunteer
-    // corruption.
-    const slotsChanged = !slotsUnchanged(existing.slots, input.slots);
+    // reconciled by id, so a save only touches the rows that actually
+    // changed — an in-place edit to a kept slot never runs a DELETE, so it
+    // never cascades a claim. Accepted trade-off: if this second batch fails
+    // after phase 1 committed, the form carries the new revision with the
+    // old slot rows — a failed edit the volunteer retries with the fresh
+    // revision, not cross-volunteer corruption.
+    const slotDiff = diffSignupSlots(existing.slots, input.slots);
+    const slotsChanged =
+      slotDiff.toInsert.length > 0 ||
+      slotDiff.toUpdate.length > 0 ||
+      slotDiff.toRemove.length > 0;
     await env.DB.batch([
-      ...(slotsChanged
-        ? [
-            env.DB.prepare(`DELETE FROM signup_slots WHERE form_id = ?`).bind(
-              id,
-            ),
-            ...slotStatements(env, id, input, now),
-          ]
-        : []),
+      ...(slotsChanged ? slotDiffStatements(env, id, slotDiff, now) : []),
       recordSignupAudit(env, "form", id, "updated", actorId, {
         slug: input.slug,
         state: input.state,
         slotCount: input.slots.length,
-        slotsReplaced: slotsChanged,
+        slotsChanged: {
+          added: slotDiff.toInsert.length,
+          updated: slotDiff.toUpdate.length,
+          removed: slotDiff.toRemove.length,
+        },
       }),
     ]);
   } catch (error) {
     if (error instanceof SignupConflictError) throw error;
+    if (isInvalidEventReference(error)) {
+      throw new SignupRequestError(
+        400,
+        "validation",
+        "That event no longer exists.",
+      );
+    }
     if (/UNIQUE constraint failed: signup_forms\.slug/.test(String(error))) {
       throw new SignupConflictError("Another signup already uses that slug.");
     }
@@ -478,6 +547,10 @@ function isDuplicateEmail(error: unknown): boolean {
   return /UNIQUE constraint failed: signup_responses\.form_id/.test(
     String(error),
   );
+}
+
+function isInvalidEventReference(error: unknown): boolean {
+  return /FOREIGN KEY constraint failed/.test(String(error));
 }
 
 async function readClaims(

@@ -1,3 +1,4 @@
+import { CALENDAR_PERMISSION } from "./calendar";
 import { sendSignupLinkEmail, signupLinkUrl } from "./signup-email";
 import {
   createSignupForm,
@@ -71,6 +72,12 @@ export async function handleAdminSignupRequest(
   env: SignupBindings,
   user: { userId: string; email: string },
   session: { csrfToken: string; cookie: string } | null,
+  // Defaults true so existing tests that don't exercise this permission are
+  // unaffected; request-handler.ts always passes the real value. The HTML
+  // /admin/signups/new route already gates on calendar.manage, but that's a
+  // UX guard, not a security boundary — this API is directly callable, so
+  // the same requirement has to be enforced here too.
+  canManageCalendar = true,
 ): Promise<Response> {
   const url = new URL(request.url);
   const relative = url.pathname.slice(SIGNUP_ADMIN_BASE.length);
@@ -98,6 +105,13 @@ export async function handleAdminSignupRequest(
     }
 
     if (request.method === "POST" && relative === "/forms") {
+      if (!canManageCalendar) {
+        throw new SignupRequestError(
+          403,
+          "forbidden",
+          `The ${CALENDAR_PERMISSION} permission is required to attach a signup to an event.`,
+        );
+      }
       const input = validateSignupFormInput(
         (await request.json()) as Record<string, unknown>,
       );
@@ -132,6 +146,17 @@ export async function handleAdminSignupRequest(
         const payload = (await request.json()) as Record<string, unknown>;
         const expectedRevision = readExpectedRevision(payload);
         const input = validateSignupFormInput(payload);
+        const existing = await getSignupFormById(env, id);
+        if (!existing) {
+          throw new SignupRequestError(404, "not_found", "Signup not found.");
+        }
+        if (input.eventId !== existing.eventId && !canManageCalendar) {
+          throw new SignupRequestError(
+            403,
+            "forbidden",
+            `The ${CALENDAR_PERMISSION} permission is required to change a signup's event.`,
+          );
+        }
         return json({
           version: SIGNUP_VERSION,
           form: await updateSignupForm(
