@@ -20,7 +20,8 @@ specific signup. Creating a form additionally requires the `calendar.manage`
 permission, since choosing which event to attach to reuses the calendar
 admin's event list; editing an existing form degrades gracefully to a
 disabled, unchanged event field for a volunteer who holds `signups.manage`
-alone.
+alone. The signup list page hides its "New form" link from that volunteer and
+explains what is missing, rather than letting them click through to a 403.
 
 Each signup is attached to one calendar event and is one of two types:
 
@@ -42,11 +43,24 @@ what happened. If claims are lost to a removal, `signup_audit` still has the
 "updated" record showing the removed count, and the response's own audit
 trail shows what it originally claimed.
 
+**Lowering an item's quantity below what families already claimed is allowed
+and nothing warns about it.** Capacity is enforced by triggers on
+`signup_claims`, which never fire on a `signup_slots` update, and the admin item
+editor does not show how much of each item is already claimed. Save a
+`quantityNeeded` of 2 on an item with 5 already claimed and the save succeeds
+with the item oversubscribed. The families holding those claims are then locked
+out of self-service edits: the public edit path rewrites all of a family's
+claims in one batch, the capacity trigger aborts that batch, and the family sees
+a 409 `slot_full` ("A requested item is already covered.") on their next edit —
+even for an unrelated change like a dietary note. Either raise the quantity back
+to at least the claimed total, or have the affected families drop that item.
+
 Saving a form is optimistic-concurrency guarded by `expectedRevision`, the
 same as the calendar: the admin page reports a conflict rather than silently
 overwriting a change saved since the page loaded. Internally the save is
-two-phase — a revision bump lands alone first, and the slot replacement plus
-audit row only run if that bump actually matched a row. The accepted
+two-phase — a revision bump lands alone first, and the per-item slot
+reconciliation (inserts, in-place updates, and deletes for removed items) plus
+the audit row only run if that bump actually matched a row. The accepted
 trade-off: if the second phase fails after the first commits, the form is
 left on the new revision with the old slot list, which surfaces to the
 volunteer as a failed save to retry, not as another volunteer's edit getting
@@ -217,8 +231,15 @@ Do not deploy or apply remote migrations until separately approved.
   `signups.manage`.
 - Mutation returns `invalid_csrf`: reload the page for a fresh signed
   cookie/token pair.
-- A volunteer reports claims disappeared: the form's item list was edited,
-  which cascades claims. Recover the claimed items from `signup_audit`.
+- A volunteer reports claims disappeared: an item was removed from the form (or
+  the form's type was switched from `items` to `rsvp`, which removes every
+  item) — either cascades the claims on the removed item(s). Editing an item's
+  label, quantity, or notes in place never does this. Recover the claimed items
+  from `signup_audit`.
+- A family gets 409 `slot_full` editing a response they already saved, with no
+  new claim: the item's `quantityNeeded` was lowered below what is already
+  claimed. Raise the quantity back, or have the family drop that item. See the
+  oversubscription note under [Volunteer workflow](#volunteer-workflow).
 - Resend or a repeat public submission returns 404: the response was deleted
   between the lookup and the token rotation, so no link was emailed. That is
   the intended outcome; a link whose hash was never stored could never work.
