@@ -153,7 +153,10 @@ export function renderSignupAdminDetailPage(
         <label>Form type<select name="formType" id="form-type"><option value="rsvp">RSVP (attendance only)</option><option value="items">Items (families claim what to bring)</option></select></label>
       </div>
       <fieldset id="slot-editor" hidden>
-        <div class="toolbar"><strong>Items</strong></div>
+        <div class="toolbar">
+          <strong>Items</strong>
+          <button type="button" id="add-slot">Add item</button>
+        </div>
         <div id="slot-list"></div>
       </fieldset>
       <div class="actions">
@@ -210,6 +213,106 @@ function toggleSlotEditor(formType) {
   document.querySelector('#slot-editor').hidden = formType !== 'items';
 }
 formTypeSelect.addEventListener('change', (event) => toggleSlotEditor(event.target.value));
+
+let claimCounts = {};
+
+// Mirrors diffRemovedSlotIds() exported from signup-admin-page.ts, which is
+// unit-tested there — this copy runs in the browser and must stay in sync.
+function diffRemovedSlotIds(loadedSlotIds, currentRows) {
+  const kept = new Set(currentRows.map((row) => row.id).filter(Boolean));
+  return loadedSlotIds.filter((id) => !kept.has(id));
+}
+
+// Mirrors countClaimedFamiliesBySlot() exported from signup-admin-page.ts.
+function countClaimedFamiliesBySlot(responses) {
+  const counts = {};
+  for (const response of responses) {
+    for (const claim of response.claims) {
+      counts[claim.slotId] = (counts[claim.slotId] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
+const slotList = document.querySelector('#slot-list');
+
+function slotRow(slot) {
+  const row = document.createElement('div');
+  row.className = 'slot-row';
+  row.dataset.slotId = slot && slot.id ? slot.id : '';
+
+  const label = document.createElement('input');
+  label.name = 'label';
+  label.required = true;
+  label.maxLength = 120;
+  label.placeholder = 'Item';
+  label.value = slot ? slot.label : '';
+
+  const quantity = document.createElement('input');
+  quantity.name = 'quantityNeeded';
+  quantity.type = 'number';
+  quantity.min = '1';
+  quantity.max = '500';
+  quantity.required = true;
+  quantity.value = String(slot ? slot.quantityNeeded : 1);
+
+  const notes = document.createElement('input');
+  notes.name = 'notes';
+  notes.maxLength = 300;
+  notes.placeholder = 'Notes (optional)';
+  notes.value = slot && slot.notes ? slot.notes : '';
+
+  const up = document.createElement('button');
+  up.type = 'button';
+  up.textContent = '↑';
+  up.addEventListener('click', () => {
+    const prev = row.previousElementSibling;
+    if (prev) row.parentElement.insertBefore(row, prev);
+  });
+
+  const down = document.createElement('button');
+  down.type = 'button';
+  down.textContent = '↓';
+  down.addEventListener('click', () => {
+    const next = row.nextElementSibling;
+    if (next) row.parentElement.insertBefore(next, row);
+  });
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'danger';
+  remove.textContent = 'Remove';
+  remove.addEventListener('click', () => row.remove());
+
+  row.append(label, quantity, notes, up, down, remove);
+
+  if (slot && slot.id) {
+    const claimed = claimCounts[slot.id] || 0;
+    const info = document.createElement('small');
+    info.textContent = claimed > 0
+      ? claimed + (claimed === 1 ? ' family has' : ' families have') + ' claimed this item'
+      : 'No claims yet';
+    row.append(info);
+  }
+  return row;
+}
+
+function renderSlotEditor(slots) {
+  slotList.replaceChildren(...slots.map((slot) => slotRow(slot)));
+}
+
+function currentSlotRows() {
+  return Array.from(slotList.querySelectorAll('.slot-row')).map((row) => ({
+    id: row.dataset.slotId || undefined,
+    label: row.querySelector('[name="label"]').value.trim(),
+    quantityNeeded: Number(row.querySelector('[name="quantityNeeded"]').value),
+    notes: row.querySelector('[name="notes"]').value.trim() || null,
+  }));
+}
+
+document.querySelector('#add-slot').addEventListener('click', () => {
+  slotList.append(slotRow(null));
+});
 
 async function loadEventOptions(selectedEventId) {
   try {
@@ -331,7 +434,9 @@ function populateSettingsForm(form) {
 async function loadForm() {
   const data = await request('/api/signups-admin/v1/forms/' + encodeURIComponent(FORM_ID));
   currentForm = data.form;
+  claimCounts = countClaimedFamiliesBySlot(data.responses);
   populateSettingsForm(currentForm);
+  renderSlotEditor(currentForm.slots);
   renderResponses(currentForm, data.responses, data.summary);
   await loadEventOptions(currentForm.eventId);
 }
@@ -339,6 +444,28 @@ async function loadForm() {
 settingsForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const values = Object.fromEntries(new FormData(settingsForm).entries());
+  const formType = values.formType;
+  const rows = formType === 'items' ? currentSlotRows() : [];
+
+  if (currentForm) {
+    const removedIds = diffRemovedSlotIds(
+      currentForm.slots.map((slot) => slot.id),
+      rows,
+    );
+    const removedClaimed = removedIds.filter((id) => (claimCounts[id] || 0) > 0);
+    if (removedClaimed.length > 0) {
+      const names = removedClaimed.map((id) => {
+        const slot = currentForm.slots.find((entry) => entry.id === id);
+        const count = claimCounts[id];
+        return '"' + slot.label + '" (' + count + ' famil' + (count === 1 ? 'y' : 'ies') + ')';
+      });
+      const confirmed = window.confirm(
+        'Removing ' + names.join(', ') + " deletes those families' claims. Continue?",
+      );
+      if (!confirmed) return;
+    }
+  }
+
   const payload = {
     slug: values.slug,
     // A disabled <select> is excluded from FormData entirely, so when the
@@ -347,12 +474,12 @@ settingsForm.addEventListener('submit', async (event) => {
     // eventId so an unrelated settings change (title, instructions, state,
     // ...) doesn't silently drop the event and fail validation.
     eventId: eventSelect.disabled ? currentForm?.eventId : values.eventId,
-    formType: values.formType,
+    formType,
     title: values.title,
     instructions: values.instructions,
     state: values.state,
     closesAt: utcValue(values.closesAt),
-    slots: [],
+    slots: rows,
   };
 
   saveButton.disabled = true;
@@ -379,6 +506,7 @@ settingsForm.addEventListener('submit', async (event) => {
 });
 
 if (MODE === 'create') {
+  renderSlotEditor([]);
   toggleSlotEditor('rsvp');
   loadEventOptions(null).catch((error) => showNotice(error.message, 'error'));
 } else {

@@ -94,6 +94,8 @@ function runSignupDetailScript(
     "#event-select": eventSelectEl,
     "#form-type": makeFakeElement(),
     "#slot-editor": makeFakeElement(),
+    "#add-slot": makeFakeElement(),
+    "#slot-list": makeFakeElement(),
     "#responses": makeFakeElement(),
   };
 
@@ -265,5 +267,14 @@ describe("renderSignupAdminDetailPage", () => {
     // currentForm fallback this would be undefined and the server would
     // reject the save — the exact bug the degrade path exists to avoid.
     expect(putBody.eventId).toBe("event-1");
+  });
+
+  it("renders the add-item button inside the slot editor", () => {
+    const html = renderSignupAdminDetailPage(
+      "csrf-token",
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expect(html).toContain('id="add-slot"');
+    expect(html).toContain('id="slot-list"');
   });
 });
