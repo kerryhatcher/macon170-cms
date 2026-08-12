@@ -764,6 +764,52 @@ describe('signup admin routing', () => {
     expect(db.batch).not.toHaveBeenCalled()
   })
 
+  it('rejects creating a signup form via the API without calendar.manage, even with signups.manage', async () => {
+    // The HTML /admin/signups/new route already gates on calendar.manage,
+    // but that's a UX guard, not a security boundary: this API is directly
+    // callable, so the same gate has to be enforced here too, not just at
+    // the page route.
+    const token = await AuthManager.generateToken(
+      'editor-1',
+      'editor@example.test',
+      'editor',
+      secret,
+    )
+    const csrfToken = await generateCsrfToken(secret)
+    let lastPermission: unknown
+    const db = {
+      prepare: () => ({
+        bind(...args: unknown[]) {
+          lastPermission = args[1]
+          return this
+        },
+        first: async () =>
+          lastPermission === 'signups.manage' ? { id: 'editor-1' } : null,
+      }),
+      batch: vi.fn(),
+    }
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request('https://cms.macon170.com/api/signups-admin/v1/forms', {
+        method: 'POST',
+        headers: {
+          Cookie: `auth_token=${token}; csrf_token=${csrfToken}`,
+          Origin: 'https://cms.macon170.com',
+          'X-CSRF-Token': csrfToken,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      }),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'forbidden' },
+    })
+    expect(db.batch).not.toHaveBeenCalled()
+  })
+
   it('requires the signups.manage permission for the admin page', async () => {
     const token = await AuthManager.generateToken(
       'editor-1',

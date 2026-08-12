@@ -51,7 +51,7 @@ editor does not show how much of each item is already claimed. Save a
 with the item oversubscribed. The families holding those claims are then locked
 out of self-service edits: the public edit path rewrites all of a family's
 claims in one batch, the capacity trigger aborts that batch, and the family sees
-a 409 `slot_full` ("A requested item is already covered.") on their next edit —
+a 409 `slot_full` ("Someone just claimed that item. Pick another.") on their next edit —
 even for an unrelated change like a dietary note. Either raise the quantity back
 to at least the claimed total, or have the affected families drop that item.
 

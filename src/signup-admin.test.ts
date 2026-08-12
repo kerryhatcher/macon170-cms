@@ -365,4 +365,77 @@ describe("signup admin API", () => {
     );
     expect(response.status).toBe(404);
   });
+
+  it("creates a form when the volunteer holds calendar.manage", async () => {
+    const { db } = adminDb();
+    const response = await handleAdminSignupRequest(
+      adminRequest("/forms", { method: "POST", body: JSON.stringify(formPayload) }),
+      adminEnv(db),
+      user,
+      null,
+      true,
+    );
+    expect(response.status).toBe(201);
+  });
+
+  it("rejects creating a form without calendar.manage, even with signups.manage", async () => {
+    // The HTML /admin/signups/new route already gates on calendar.manage, but
+    // that route is a UX guard, not a security boundary: this API is directly
+    // callable, so a signups.manage-only volunteer must not be able to bypass
+    // the HTML gate by calling POST /forms directly.
+    const { db, batch } = adminDb();
+    const response = await handleAdminSignupRequest(
+      adminRequest("/forms", { method: "POST", body: JSON.stringify(formPayload) }),
+      adminEnv(db),
+      user,
+      null,
+      false,
+    );
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "forbidden" },
+    });
+    expect(batch).not.toHaveBeenCalled();
+  });
+
+  it("allows a save that leaves eventId unchanged without calendar.manage", async () => {
+    // formPayload.eventId ("evt-1") matches formRow.event_id, so this is a
+    // title/instructions/state-only style edit — the degrade path the admin
+    // UI's disabled event-select relies on must keep working end to end.
+    const { db } = adminDb();
+    const response = await handleAdminSignupRequest(
+      adminRequest("/forms/frm-1", {
+        method: "PUT",
+        body: JSON.stringify({ ...formPayload, expectedRevision: 4 }),
+      }),
+      adminEnv(db),
+      user,
+      null,
+      false,
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects changing a form's event without calendar.manage, even with signups.manage", async () => {
+    const { db, batch } = adminDb();
+    const response = await handleAdminSignupRequest(
+      adminRequest("/forms/frm-1", {
+        method: "PUT",
+        body: JSON.stringify({
+          ...formPayload,
+          eventId: "evt-2",
+          expectedRevision: 4,
+        }),
+      }),
+      adminEnv(db),
+      user,
+      null,
+      false,
+    );
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "forbidden" },
+    });
+    expect(batch).not.toHaveBeenCalled();
+  });
 });

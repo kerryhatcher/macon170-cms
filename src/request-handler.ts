@@ -380,6 +380,7 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
         csrf instanceof Response
           ? null
           : { csrfToken: csrf.token, cookie: csrf.cookie },
+        await hasCalendarPermission(env, user),
       );
     }
 
