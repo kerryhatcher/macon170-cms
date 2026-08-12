@@ -14,7 +14,13 @@ and `perm_signups_manage` permission IDs to `user_permissions`.
 
 `/admin/signups/:id` only accepts a `crypto.randomUUID()`-shaped id, which is
 how every signup form id is generated. Anything else, including a stray path
-segment, returns a plain 404 before the page template ever renders.
+segment, returns a plain 404 before the page template ever renders — except
+the literal `/admin/signups/new`, which opens the create form instead of a
+specific signup. Creating a form additionally requires the `calendar.manage`
+permission, since choosing which event to attach to reuses the calendar
+admin's event list; editing an existing form degrades gracefully to a
+disabled, unchanged event field for a volunteer who holds `signups.manage`
+alone.
 
 Each signup is attached to one calendar event and is one of two types:
 
@@ -25,19 +31,16 @@ Forms start as `draft` and are invisible publicly. Set `state` to `open` to
 accept responses, `closed` to stop them. A `closesAt` deadline closes the form
 automatically without another edit.
 
-Editing an `items` form's slot list is destructive to existing claims:
-`signup_slots` is replaced wholesale whenever the submitted list differs from
-the stored one in any item's label, order, quantity, or notes, and
-`signup_claims.slot_id` cascades on delete. Reordering or renaming an item
-after families have claimed it deletes their claims along with the old slot
-row, even though the family's response otherwise survives untouched. **Add new
-items instead of reordering or renaming existing ones once a form is open.**
-A save that changes only the title, instructions, deadline, or open/closed
-state leaves the slot rows and every claim in place; the "updated" audit row
-records `slotsReplaced` so an operator can tell the two cases apart. If claims
-do disappear this way, `signup_audit` still has the "updated" record showing
-the old slot count, and the response's own audit trail shows what it
-originally claimed.
+Editing an `items` form's slot list reconciles by each item's id: adding a new
+item, or editing an existing item's label, quantity, or notes, never touches
+any family's claims. **Only removing an item deletes the claims on it** — an
+inherent consequence of the item no longer existing, not a side effect of
+saving. Switching a form's type from `items` to `rsvp` removes every item and
+so deletes every claim on the form. The "updated" audit row records
+`slotsChanged: { added, updated, removed }` so an operator can tell exactly
+what happened. If claims are lost to a removal, `signup_audit` still has the
+"updated" record showing the removed count, and the response's own audit
+trail shows what it originally claimed.
 
 Saving a form is optimistic-concurrency guarded by `expectedRevision`, the
 same as the calendar: the admin page reports a conflict rather than silently
