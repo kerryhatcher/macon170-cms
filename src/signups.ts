@@ -253,10 +253,9 @@ export function validateSignupFormInput(
             invalid("quantityNeeded");
           }
           return {
-            id:
-              typeof slot.id === "string" && slot.id.length > 0
-                ? slot.id
-                : undefined,
+            ...(typeof slot.id === "string" && slot.id.length > 0
+              ? { id: slot.id }
+              : {}),
             position: index,
             label: text(slot.label, "label", 1, 120),
             quantityNeeded,
