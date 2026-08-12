@@ -341,7 +341,12 @@ settingsForm.addEventListener('submit', async (event) => {
   const values = Object.fromEntries(new FormData(settingsForm).entries());
   const payload = {
     slug: values.slug,
-    eventId: values.eventId,
+    // A disabled <select> is excluded from FormData entirely, so when the
+    // event picker is disabled (403 degrade path — no calendar.manage),
+    // values.eventId is undefined. Fall back to the loaded form's own
+    // eventId so an unrelated settings change (title, instructions, state,
+    // ...) doesn't silently drop the event and fail validation.
+    eventId: eventSelect.disabled ? currentForm?.eventId : values.eventId,
     formType: values.formType,
     title: values.title,
     instructions: values.instructions,
