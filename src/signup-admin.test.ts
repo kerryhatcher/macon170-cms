@@ -18,6 +18,7 @@ function response(
     formType: "rsvp",
     email: "parent@example.com",
     familyName: "Hatcher",
+    phone: "478-555-0123",
     attending: true,
     adults: 2,
     children: 1,
@@ -99,6 +100,7 @@ const responseRow = {
   form_id: "frm-1",
   email: "parent@example.com",
   family_name: "Hatcher",
+  phone: "478-555-0123",
   attending: 1,
   adults: 2,
   children: 1,
@@ -163,9 +165,9 @@ function adminDb(options: {
 function adminEnv(db: unknown) {
   return {
     PUBLIC_SITE_ORIGIN: "https://www.macon170.com",
-    INVITE_FROM_EMAIL: "volunteers@macon170.com",
-    INVITE_FROM_NAME: "Pack 170 Volunteers",
-    EMAIL: { send: vi.fn().mockResolvedValue(undefined) },
+    MAILGUN_API_KEY: "key-test",
+    MAILGUN_DOMAIN: "macon170.com",
+    SIGNUP_FROM_EMAIL: "volunteers@macon170.com",
     DB: db,
   } as unknown as SignupBindings;
 }
@@ -297,21 +299,24 @@ describe("signup admin API", () => {
   it("rotates the token and emails the family on resend", async () => {
     const { db, statements } = adminDb();
     const env = adminEnv(db);
+    const send = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     const response = await handleAdminSignupRequest(
       adminRequest("/responses/rsp-1/resend", { method: "POST" }),
       env,
       user,
       null,
+      true,
+      send,
     );
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ status: "resent" });
     expect(statements.some((sql) => sql.includes("UPDATE signup_responses SET token_hash"))).toBe(
       true,
     );
-    const send = (env as unknown as { EMAIL: { send: ReturnType<typeof vi.fn> } })
-      .EMAIL.send;
     expect(send).toHaveBeenCalledOnce();
-    expect(send.mock.calls[0][0].to.email).toBe("parent@example.com");
+    expect((send.mock.calls[0][1].body as FormData).get("to")).toBe(
+      "parent@example.com",
+    );
   });
 
   it("404s a resend for a response that vanished before the rotation landed", async () => {
@@ -321,15 +326,16 @@ describe("signup admin API", () => {
         .mockResolvedValue([{ meta: { changes: 0 } }, { meta: { changes: 1 } }]),
     });
     const env = adminEnv(db);
+    const send = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     const response = await handleAdminSignupRequest(
       adminRequest("/responses/rsp-1/resend", { method: "POST" }),
       env,
       user,
       null,
+      true,
+      send,
     );
     expect(response.status).toBe(404);
-    const send = (env as unknown as { EMAIL: { send: ReturnType<typeof vi.fn> } })
-      .EMAIL.send;
     expect(send).not.toHaveBeenCalled();
   });
 

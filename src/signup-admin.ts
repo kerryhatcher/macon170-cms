@@ -78,6 +78,7 @@ export async function handleAdminSignupRequest(
   // UX guard, not a security boundary — this API is directly callable, so
   // the same requirement has to be enforced here too.
   canManageCalendar = true,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<Response> {
   const url = new URL(request.url);
   const relative = url.pathname.slice(SIGNUP_ADMIN_BASE.length);
@@ -204,11 +205,12 @@ export async function handleAdminSignupRequest(
           env,
           { email: target.email, name: target.familyName },
           {
-            familyName: target.familyName,
+            name: target.familyName,
             formTitle: form.title,
             linkUrl: signupLinkUrl(env, token),
             closesAt: form.closesAt,
           },
+          fetchImpl,
         );
         return json({ version: SIGNUP_VERSION, status: "resent" });
       }

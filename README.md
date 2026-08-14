@@ -156,10 +156,11 @@ GitHub Actions validates pull requests and deploys only pushes to `main`. Config
 - `CLOUDFLARE_API_TOKEN` — deployment token for the Pack 170 Cloudflare account
 - `CLOUDFLARE_ACCOUNT_ID` — Pack 170 Cloudflare account ID
 
-The production `JWT_SECRET` and `TURNSTILE_SECRET` stay in the Worker as
-Cloudflare secrets; ordinary deployments preserve them and do not copy either
-value into GitHub. Configure `TURNSTILE_SECRET` separately before deploying the
-contact migration.
+The production `JWT_SECRET`, `TURNSTILE_SECRET`, and domain-restricted
+`MAILGUN_API_KEY` stay in the Worker as Cloudflare secrets; ordinary deployments
+preserve them and do not copy their values into GitHub. Mailgun is used only for
+event signup confirmation and resend messages. Volunteer invitations continue
+to use the Cloudflare `EMAIL` binding.
 
 ## Volunteer invitations
 

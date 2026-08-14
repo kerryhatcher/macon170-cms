@@ -76,7 +76,9 @@ try {
            AS permission,
          (SELECT COUNT(*) FROM role_permissions
            WHERE permission_id = 'perm_signups_manage' AND role = 'admin')
-           AS admin_grant`,
+           AS admin_grant,
+         (SELECT COUNT(*) FROM pragma_table_info('signup_responses')
+           WHERE name = 'phone') AS phone_columns`,
     ),
   );
   const counts = shape.at(-1).results[0];
@@ -84,6 +86,7 @@ try {
   assert(counts.triggers === 2, `expected 2 capacity triggers, got ${counts.triggers}`);
   assert(counts.permission === 1, "signups.manage permission missing");
   assert(counts.admin_grant === 1, "admin role grant missing");
+  assert(counts.phone_columns === 1, "signup response phone column missing");
 
   // Seed one event, one form, one slot needing 2.
   await execute(
@@ -108,15 +111,21 @@ try {
        created_at, updated_at
      ) VALUES ('slt-1', 'frm-1', 0, 'Hot dog buns', 2, NULL, 1, 1);
      INSERT INTO signup_responses (
-       id, form_id, email, family_name, attending, adults, children,
+       id, form_id, email, family_name, phone, attending, adults, children,
        dietary_notes, status, confirmed_at, token_hash, ip_hash,
        created_at, updated_at
      ) VALUES
-       ('rsp-1', 'frm-1', 'a@example.com', 'Alpha', 1, 2, 1, NULL,
+       ('rsp-1', 'frm-1', 'a@example.com', 'Alpha', '478-555-0101', 1, 2, 1, NULL,
         'unconfirmed', NULL, 'hash-a', NULL, 1, 1),
-       ('rsp-2', 'frm-1', 'b@example.com', 'Beta', 1, 2, 0, NULL,
+       ('rsp-2', 'frm-1', 'b@example.com', 'Beta', NULL, 1, 2, 0, NULL,
         'unconfirmed', NULL, 'hash-b', NULL, 1, 1);`,
   );
+
+  const phones = JSON.parse(
+    await execute(`SELECT phone FROM signup_responses ORDER BY id`),
+  );
+  assert(phones.at(-1).results[0].phone === "478-555-0101", "phone did not persist");
+  assert(phones.at(-1).results[1].phone === null, "legacy null phone did not persist");
 
   // Claiming the full quantity succeeds.
   await execute(

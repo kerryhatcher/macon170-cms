@@ -134,8 +134,9 @@ updates:
 
 ## Stored data
 
-`signup_responses` holds the family email, family name, attendance flag, adult
-and child counts, an optional dietary note, confirmation status, the SHA-256 of
+`signup_responses` holds the registering adult's email, name (in the legacy
+`family_name` column), private phone number, attendance flag, adult and child
+counts, an optional dietary note, confirmation status, the SHA-256 of
 the magic-link token, and a hash of the submitting IP. The raw token is never
 stored — it exists only in the email. Dietary notes, names, and emails are
 returned by the admin API and by the family's own token route, and by nothing
@@ -188,6 +189,18 @@ error is still visible in Worker observability. If the Worker is deployed
 before `0004_signups.sql` is applied, expect `signup_retention_failed` on the
 nightly run until the migration lands.
 
+## Email delivery and staged phone rollout
+
+Signup confirmation and resend messages use Mailgun's HTTP API with text and
+HTML bodies. `MAILGUN_API_KEY` is a domain-restricted Worker secret; the sending
+domain and sender are non-secret Worker variables. Each message explicitly
+disables open and click tracking and preserves the configured Reply-To address.
+SonicJS volunteer invitations continue to use the Cloudflare `EMAIL` binding.
+
+Deploy the nullable phone migration and compatibility code first. After the
+frontend phone field is live, set the preserved `SIGNUP_REQUIRE_PHONE` Worker
+secret to `true`; absent or any other value keeps compatibility mode enabled.
+
 ## Local setup and validation
 
 ```bash
@@ -204,9 +217,8 @@ permission rows, over-subscription abort, and claim cascade.
 
 ## Cutover
 
-1. Confirm `SIGNUP_RATE_LIMITER` is present in `wrangler.jsonc`. No new
-   secrets are required; Turnstile and email reuse the contact and invite
-   configuration.
+1. Confirm `SIGNUP_RATE_LIMITER` is present in `wrangler.jsonc` and provision
+   the domain-restricted `MAILGUN_API_KEY` Worker secret.
 2. Deploy the CMS and apply its migrations in an approved window.
 3. Verify `/admin/signups` renders for an administrator and returns 403 for a
    user without `signups.manage`.
@@ -222,7 +234,7 @@ Do not deploy or apply remote migrations until separately approved.
 - `409` with code `slot_full`: expected when a slot filled between page load
   and submit. The response body carries the refreshed form; re-render it.
 - `502` on submit: the response saved but email delivery failed. The family
-  submits again to resend; check the `EMAIL` binding and sender address.
+  submits again to resend; check the Mailgun secret, domain, and sender address.
 - `security` on a valid-looking request: confirm the request `Origin`
   matches `PUBLIC_SITE_ORIGIN` and that the Turnstile hostname and action
   match the committed settings.
@@ -236,6 +248,7 @@ Do not deploy or apply remote migrations until separately approved.
   item) — either cascades the claims on the removed item(s). Editing an item's
   label, quantity, or notes in place never does this. Recover the claimed items
   from `signup_audit`.
+
 - A family gets 409 `slot_full` editing a response they already saved, with no
   new claim: the item's `quantityNeeded` was lowered below what is already
   claimed. Raise the quantity back, or have the family drop that item. See the

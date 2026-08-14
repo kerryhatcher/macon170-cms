@@ -45,6 +45,7 @@ const input = validateSignupResponseInput(
   {
     email: "parent@example.com",
     familyName: "Hatcher",
+    phone: "478-555-0123",
     attending: true,
     adults: 2,
     children: 1,
@@ -97,6 +98,9 @@ describe("signup response creation", () => {
     expect(batch).toHaveBeenCalledOnce();
     expect(
       statements.some((sql) => sql.includes("INSERT INTO signup_responses")),
+    ).toBe(true);
+    expect(
+      statements.some((sql) => sql.includes("family_name, phone")),
     ).toBe(true);
     expect(
       statements.some((sql) => sql.includes("INSERT INTO signup_claims")),

@@ -105,6 +105,7 @@ describe("signup response validation", () => {
   const base = {
     email: " Parent@Example.COM ",
     familyName: "  Hatcher  ",
+    phone: " (478) 555-0123 ",
     attending: true,
     adults: 2,
     children: 3,
@@ -119,6 +120,7 @@ describe("signup response validation", () => {
     });
     expect(result.email).toBe("parent@example.com");
     expect(result.familyName).toBe("Hatcher");
+    expect(result.phone).toBe("(478) 555-0123");
     expect(result.dietaryNotes).toBe("Peanut allergy");
   });
 
@@ -158,6 +160,29 @@ describe("signup response validation", () => {
         { formType: "items", slots },
       ),
     ).toThrow("children");
+  });
+
+  it("accepts legacy responses without a phone until enforcement is enabled", () => {
+    expect(
+      validateSignupResponseInput({ ...base, phone: undefined }, { formType: "rsvp", slots: [] }).phone,
+    ).toBeNull();
+    expect(() =>
+      validateSignupResponseInput(
+        { ...base, phone: undefined },
+        { formType: "rsvp", slots: [] },
+        true,
+      ),
+    ).toThrow("phone");
+  });
+
+  it("rejects malformed phone numbers", () => {
+    expect(() =>
+      validateSignupResponseInput(
+        { ...base, phone: "call me maybe" },
+        { formType: "rsvp", slots: [] },
+        true,
+      ),
+    ).toThrow("phone");
   });
 
   it("rejects a duplicate slot claim", () => {
