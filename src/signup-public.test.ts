@@ -80,8 +80,9 @@ function baseEnv(overrides: Record<string, unknown> = {}) {
     TURNSTILE_SECRET: "1x0000000000000000000000000000000AA",
     TURNSTILE_EXPECTED_ACTION: "turnstile-spin-v2",
     TURNSTILE_EXPECTED_HOSTNAMES: "www.macon170.com",
-    INVITE_FROM_EMAIL: "volunteers@macon170.com",
-    INVITE_FROM_NAME: "Pack 170 Volunteers",
+    MAILGUN_API_KEY: "key-test",
+    MAILGUN_DOMAIN: "macon170.com",
+    SIGNUP_FROM_EMAIL: "volunteers@macon170.com",
     SIGNUP_RATE_LIMITER: { limit: async () => ({ success: true }) },
     EMAIL: { send: vi.fn().mockResolvedValue(undefined) },
     DB: stubDb(),
@@ -92,6 +93,7 @@ function baseEnv(overrides: Record<string, unknown> = {}) {
 const validSubmission = {
   email: "parent@example.com",
   familyName: "Hatcher",
+  phone: "478-555-0123",
   adults: 2,
   children: 1,
   claims: [{ slotId: "slt-1", quantity: 1 }],
@@ -334,6 +336,19 @@ describe("public signup routing", () => {
     });
   });
 
+  it("requires phone only after the server-side rollout flag is enabled", async () => {
+    const { phone, ...withoutPhone } = validSubmission;
+    const response = await handlePublicSignupRequest(
+      submit(withoutPhone),
+      baseEnv({ SIGNUP_REQUIRE_PHONE: "true" }),
+      turnstileOk,
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "validation", message: "Invalid phone" },
+    });
+  });
+
   it("rejects a submission when Turnstile does not pass", async () => {
     const failing = vi
       .fn()
@@ -430,19 +445,23 @@ describe("public signup routing", () => {
 
   it("creates a response and emails exactly one link on a first submit", async () => {
     const env = baseEnv();
+    const provider = vi.fn((url: string | URL | Request, _init?: RequestInit) =>
+      String(url).includes("challenges.cloudflare.com")
+        ? turnstileOk()
+        : Promise.resolve(new Response("accepted", { status: 200 })),
+    );
     const response = await handlePublicSignupRequest(
       submit(validSubmission),
       env,
-      turnstileOk,
+      provider,
     );
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toMatchObject({
       status: "emailed",
     });
-    const email = (env as unknown as { EMAIL: { send: ReturnType<typeof vi.fn> } })
-      .EMAIL.send;
-    expect(email).toHaveBeenCalledOnce();
-    expect(email.mock.calls[0][0].to.email).toBe("parent@example.com");
+    expect(provider).toHaveBeenCalledTimes(2);
+    const mailgunBody = provider.mock.calls[1]?.[1]?.body as FormData;
+    expect(mailgunBody.get("to")).toBe("parent@example.com");
   });
 
   it("resends the link for an email that already responded, without a second row", async () => {
@@ -616,13 +635,16 @@ describe("public signup routing", () => {
   });
 
   it("reports 502 when the response saved but the email failed", async () => {
-    const env = baseEnv({
-      EMAIL: { send: vi.fn().mockRejectedValue(new Error("sender rejected")) },
-    });
+    const env = baseEnv();
+    const provider = vi.fn((url: string | URL | Request, _init?: RequestInit) =>
+      String(url).includes("challenges.cloudflare.com")
+        ? turnstileOk()
+        : Promise.resolve(new Response("sender rejected", { status: 500 })),
+    );
     const response = await handlePublicSignupRequest(
       submit(validSubmission),
       env,
-      turnstileOk,
+      provider,
     );
     expect(response.status).toBe(502);
     await expect(response.json()).resolves.toMatchObject({

@@ -36,6 +36,7 @@ const formRow = {
 const familyDecoys = {
   email: "decoy@example.com",
   family_name: "Decoy Family",
+  phone: "478-555-0199",
   dietary_notes: "decoy peanut allergy",
   adults: 9,
   children: 9,
@@ -100,6 +101,8 @@ describe("public signup form projection", () => {
     expect(serialized).not.toContain("Decoy");
     expect(serialized).not.toContain("decoy");
     expect(serialized).not.toContain("family_name");
+    expect(serialized).not.toContain("478-555");
+    expect(serialized).not.toContain("phone");
     expect(serialized).not.toContain("children");
   });
 

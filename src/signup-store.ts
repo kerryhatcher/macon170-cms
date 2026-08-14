@@ -510,6 +510,7 @@ type ResponseRow = {
   form_id: string;
   email: string;
   family_name: string;
+  phone: string | null;
   attending: number;
   adults: number;
   children: number;
@@ -527,7 +528,8 @@ type ClaimRow = { slot_id: string; label: string; quantity: number };
 
 const responseSelect = `
   SELECT signup_responses.id, signup_responses.form_id, signup_responses.email,
-         signup_responses.family_name, signup_responses.attending,
+         signup_responses.family_name, signup_responses.phone,
+         signup_responses.attending,
          signup_responses.adults, signup_responses.children,
          signup_responses.dietary_notes, signup_responses.status,
          signup_responses.confirmed_at, signup_responses.created_at,
@@ -585,6 +587,7 @@ function rowToResponse(
     formType: row.form_type,
     email: row.email,
     familyName: row.family_name,
+    phone: row.phone,
     attending: row.attending === 1,
     adults: row.adults,
     children: row.children,
@@ -634,15 +637,16 @@ export async function createSignupResponse(
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO signup_responses
-           (id, form_id, email, family_name, attending, adults, children,
+           (id, form_id, email, family_name, phone, attending, adults, children,
             dietary_notes, status, confirmed_at, token_hash, ip_hash,
             created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unconfirmed', NULL, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'unconfirmed', NULL, ?, ?, ?, ?)`,
       ).bind(
         id,
         form.id,
         input.email,
         input.familyName,
+        input.phone,
         input.attending ? 1 : 0,
         input.adults,
         input.children,
@@ -755,11 +759,12 @@ export async function updateSignupResponse(
     await env.DB.batch([
       env.DB.prepare(
         `UPDATE signup_responses
-         SET family_name = ?, attending = ?, adults = ?, children = ?,
+         SET family_name = ?, phone = ?, attending = ?, adults = ?, children = ?,
              dietary_notes = ?, updated_at = ?
          WHERE id = ?`,
       ).bind(
         input.familyName,
+        input.phone,
         input.attending ? 1 : 0,
         input.adults,
         input.children,

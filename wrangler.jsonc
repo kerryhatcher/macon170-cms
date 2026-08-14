@@ -41,10 +41,15 @@
     "INVITE_FROM_EMAIL": "volunteers@macon170.com",
     "INVITE_FROM_NAME": "Pack 170 Volunteers",
     "INVITE_REPLY_TO": "contact@macon170.com",
+    "MAILGUN_DOMAIN": "macon170.com",
+    "SIGNUP_FROM_EMAIL": "volunteers@macon170.com",
+    "SIGNUP_FROM_NAME": "Pack 170 Volunteers",
+    "SIGNUP_REPLY_TO": "contact@macon170.com",
     "TURNSTILE_EXPECTED_ACTION": "turnstile-spin-v2",
     "TURNSTILE_EXPECTED_HOSTNAMES": "macon170.com,www.macon170.com"
   },
-  // TURNSTILE_SECRET is a Worker secret. Configure it separately before contact cutover.
+  // TURNSTILE_SECRET, the domain-restricted MAILGUN_API_KEY, and the rollout
+  // toggle SIGNUP_REQUIRE_PHONE are Worker secrets.
   "triggers": { "crons": ["17 3 * * *"] },
   "observability": {
     "enabled": true,

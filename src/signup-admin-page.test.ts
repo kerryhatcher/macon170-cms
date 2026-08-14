@@ -317,6 +317,16 @@ describe("renderSignupAdminDetailPage", () => {
     expect(html).toContain('id="slot-editor"');
   });
 
+  it("labels the private volunteer response columns as Your Name and Phone", () => {
+    const html = renderSignupAdminDetailPage(
+      "csrf-token",
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expect(html).toContain("'Your Name', 'Email', 'Phone'");
+    expect(html).toContain("entry.phone ?? '—'");
+    expect(html).not.toContain("['Family', 'Email'");
+  });
+
   it("renders create mode without a form id and without a response section", () => {
     const html = renderSignupAdminDetailPage("csrf-token", null);
     expect(html).toContain("New signup form");
@@ -449,7 +459,7 @@ describe("renderSignupAdminDetailPage", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     // An empty-valued first option is what makes the required <select> block a
-    // save that never picked an event; without it the browser pre-selects a
+    // save that never picked an event; without it the browser preselects a
     // real option and the signup silently lands on whatever sorted first.
     expect(eventSelectEl.children[0]?.value).toBe("");
     expect(eventSelectEl.children.map((option) => option.value)).toEqual([

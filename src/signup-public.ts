@@ -62,6 +62,10 @@ function cors(response: Response, origin: string | null): Response {
 const notFound = () =>
   new SignupRequestError(404, "not_found", "Signup not found.");
 
+function requirePhone(env: SignupBindings): boolean {
+  return env.SIGNUP_REQUIRE_PHONE?.toLowerCase() === "true";
+}
+
 // The token routes carry the bearer credential in the path itself. Never log
 // a raw pathname from this module — route every log line through here so a
 // future log statement can't reintroduce the leak.
@@ -286,7 +290,7 @@ async function handleSubmission(
   }
 
   const form = await requireOpenForm(env, slug);
-  const input = validateSignupResponseInput(raw, form);
+  const input = validateSignupResponseInput(raw, form, requirePhone(env));
 
   const token =
     typeof raw["cf-turnstile-response"] === "string"
@@ -378,11 +382,12 @@ async function handleSubmission(
       env,
       { email: input.email, name: input.familyName },
       {
-        familyName: input.familyName,
+        name: input.familyName,
         formTitle: form.title,
         linkUrl: signupLinkUrl(env, signupToken),
         closesAt: form.closesAt,
       },
+      fetchImpl,
     );
   } catch {
     // The row is kept deliberately. A repeat submit rotates the token and
@@ -447,6 +452,7 @@ async function handleResponseRoute(
   const input = validateSignupResponseInput(
     { ...(await readBody(request)), email: detail.email },
     form,
+    requirePhone(env),
   );
   try {
     await updateSignupResponse(env, detail.id, input);

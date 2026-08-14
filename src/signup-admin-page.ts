@@ -381,7 +381,7 @@ async function loadEventOptions(selectedEventId) {
     });
     if (selectedEventId === null) {
       // Create mode: force an explicit choice. Without an empty-valued first
-      // option the browser pre-selects a real event, so a volunteer could save
+      // option the browser preselects a real event, so a volunteer could save
       // without ever picking one and silently attach the signup to whatever
       // sorted first. An empty value plus required on the <select> blocks the
       // submit until a real event is chosen. Deliberately not disabled — a
@@ -442,7 +442,7 @@ function renderResponses(form, responses, summary) {
 
   const table = document.createElement('table');
   const header = document.createElement('tr');
-  for (const label of ['Family', 'Email', 'Attending', 'Adults', 'Children', 'Dietary', 'Bringing', 'Status', 'Signed up', '']) {
+  for (const label of ['Your Name', 'Email', 'Phone', 'Attending', 'Adults', 'Children', 'Dietary', 'Bringing', 'Status', 'Signed up', '']) {
     const th = document.createElement('th');
     th.textContent = label;
     header.append(th);
@@ -453,6 +453,7 @@ function renderResponses(form, responses, summary) {
     const row = document.createElement('tr');
     cell(row, entry.familyName);
     cell(row, entry.email);
+    cell(row, entry.phone ?? '—');
     cell(row, entry.attending ? 'Yes' : 'No');
     cell(row, String(entry.adults));
     cell(row, String(entry.children));

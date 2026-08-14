@@ -21,6 +21,13 @@ export type SignupBindings = Bindings & {
   INVITE_FROM_EMAIL?: string;
   INVITE_FROM_NAME?: string;
   INVITE_REPLY_TO?: string;
+  MAILGUN_API_KEY?: string;
+  MAILGUN_API_ORIGIN?: string;
+  MAILGUN_DOMAIN?: string;
+  SIGNUP_FROM_EMAIL?: string;
+  SIGNUP_FROM_NAME?: string;
+  SIGNUP_REPLY_TO?: string;
+  SIGNUP_REQUIRE_PHONE?: string;
   SIGNUP_RATE_LIMITER: { limit(options: { key: string }): Promise<{ success: boolean }> };
   // The real Cloudflare send_email binding, not a hand-rolled stub. A stub
   // whose send() returned Promise<void> stopped this type from overlapping
@@ -81,6 +88,7 @@ export type SignupClaimInput = { slotId: string; quantity: number };
 export type SignupResponseInput = {
   email: string;
   familyName: string;
+  phone: string | null;
   attending: boolean;
   adults: number;
   children: number;
@@ -96,6 +104,7 @@ export type SignupResponseDetail = {
   formType: SignupFormType;
   email: string;
   familyName: string;
+  phone: string | null;
   attending: boolean;
   adults: number;
   children: number;
@@ -159,6 +168,7 @@ const formTypes = new Set<SignupFormType>(["rsvp", "items"]);
 const formStates = new Set<SignupFormState>(["draft", "open", "closed"]);
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const emailPattern = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+const phonePattern = /^[0-9+().\-\s/#xextEXT]+$/;
 const instantPattern =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 
@@ -295,9 +305,19 @@ export function validateSignupFormInput(
 export function validateSignupResponseInput(
   raw: Record<string, unknown>,
   form: { formType: SignupFormType; slots: SignupSlot[] },
+  requirePhone = false,
 ): SignupResponseInput {
   const email = text(raw.email, "email", 5, 200).toLowerCase();
   if (!emailPattern.test(email)) invalid("email");
+
+  const phone = optionalText(raw.phone, "phone", 40);
+  if (requirePhone && phone === null) invalid("phone");
+  if (phone !== null) {
+    const digitCount = phone.replace(/\D/g, "").length;
+    if (!phonePattern.test(phone) || digitCount < 7 || digitCount > 20) {
+      invalid("phone");
+    }
+  }
 
   const knownSlots = new Map(form.slots.map((slot) => [slot.id, slot]));
   const rawClaims = Array.isArray(raw.claims) ? raw.claims : [];
@@ -335,6 +355,7 @@ export function validateSignupResponseInput(
   return {
     email,
     familyName: text(raw.familyName, "familyName", 2, 120),
+    phone,
     attending: form.formType === "items" ? true : boolish(raw.attending),
     adults: count(raw.adults ?? 0, "adults"),
     children: count(raw.children ?? 0, "children"),
