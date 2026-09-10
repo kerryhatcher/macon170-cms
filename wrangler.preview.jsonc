@@ -1,0 +1,35 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "macon170-cms-preview-placeholder",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "replace-at-deploy",
+      "database_id": "replace-at-deploy",
+      "migrations_dir": "./node_modules/@sonicjs-cms/core/migrations",
+    },
+  ],
+  "r2_buckets": [
+    { "binding": "MEDIA_BUCKET", "bucket_name": "replace-at-deploy" },
+  ],
+  "ratelimits": [
+    {
+      "name": "CONTACT_RATE_LIMITER",
+      "namespace_id": "999999",
+      "simple": { "limit": 6, "period": 60 },
+    },
+  ],
+  "vars": {
+    "APP_VERSION": "preview",
+    "ENVIRONMENT": "preview",
+    "CORS_ORIGINS": "replace-at-deploy",
+    "PUBLIC_SITE_ORIGIN": "replace-at-deploy",
+    "TURNSTILE_EXPECTED_ACTION": "turnstile-spin-v2",
+    "TURNSTILE_EXPECTED_HOSTNAMES": "replace-at-deploy",
+  },
+}
