@@ -1,0 +1,44 @@
+diff --git a/dist/chunk-OCL3HMEG.js b/dist/chunk-OCL3HMEG.js
+index 259a5400b965d3620d1a53c836950ebb010a50e9..2d1773bd0f5e109fcdf7cae08af82519f2ca05bb 100644
+--- a/dist/chunk-OCL3HMEG.js
++++ b/dist/chunk-OCL3HMEG.js
+@@ -13780,14 +13780,15 @@ userRoutes.post("/invite-user", async (c) => {
+     const userId = crypto.randomUUID();
+     const createUserStmt = db.prepare(`
+       INSERT INTO users (
+-        id, email, first_name, last_name, role, 
++        id, email, username, first_name, last_name, role, 
+         invitation_token, invited_by, invited_at,
+         is_active, email_verified, created_at, updated_at
+-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
++      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     `);
+     await createUserStmt.bind(
+       userId,
+       email,
++      `invited-${userId}`,
+       firstName,
+       lastName,
+       role,
+diff --git a/dist/chunk-R4FOLLFB.cjs b/dist/chunk-R4FOLLFB.cjs
+index b4554c4bf0902ca597148b170c7fe5f1ef48f534..2458ca2129c9c7a73794d81ac0531d6ddd14d89e 100644
+--- a/dist/chunk-R4FOLLFB.cjs
++++ b/dist/chunk-R4FOLLFB.cjs
+@@ -13782,14 +13782,15 @@ userRoutes.post("/invite-user", async (c) => {
+     const userId = crypto.randomUUID();
+     const createUserStmt = db.prepare(`
+       INSERT INTO users (
+-        id, email, first_name, last_name, role, 
++        id, email, username, first_name, last_name, role, 
+         invitation_token, invited_by, invited_at,
+         is_active, email_verified, created_at, updated_at
+-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
++      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     `);
+     await createUserStmt.bind(
+       userId,
+       email,
++      `invited-${userId}`,
+       firstName,
+       lastName,
+       role,

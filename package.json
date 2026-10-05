@@ -41,5 +41,8 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "patchedDependencies": {
+    "@sonicjs-cms/core@2.19.0": "patches/@sonicjs-cms%2Fcore@2.19.0.patch"
   }
 }

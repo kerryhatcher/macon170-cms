@@ -16,7 +16,7 @@ item claims attached to a calendar event — use the workflow documented in
 
 ### Prerequisites
 
-- Node.js 18 or higher
+- Node.js 22.13 or higher (the integration tests use built-in SQLite)
 - A Cloudflare account (free tier works great)
 - Wrangler CLI (installed with dependencies)
 
@@ -174,6 +174,14 @@ Service and verify `volunteers@macon170.com` as a sender. The committed
 `send_email` binding is intentionally restricted to that sender. Email
 delivery uses Cloudflare's Worker binding; do not configure the SonicJS
 Resend plugin or place a provider API key in the CMS database.
+
+SonicJS 2.19.0 omits the required `users.username` column when creating an
+invitation. The Bun patch in `patches/` supplies a unique temporary username;
+the acceptance flow replaces it with the recipient's chosen username. Keep
+installing with `bun install --frozen-lockfile` so this patch is applied.
+`src/invitation.integration.test.ts` exercises the installed SonicJS routes
+against its SQLite schema, including invitation creation and acceptance.
+Remove the patch only after an upstream release passes these tests unpatched.
 
 The deployment smoke runner checks the calendar plus contact schema version,
 CORS/preflight, missing-token rejection, and queue login redirect. It accepts `EXPECTED_VERSION`,
