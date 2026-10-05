@@ -21,6 +21,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@sonicjs-cms/core@2.19.0": "patches/@sonicjs-cms%2Fcore@2.19.0.patch",
+  },
   "packages": {
     "@cf-wasm/resvg": ["@cf-wasm/resvg@0.3.5", "", { "dependencies": { "@resvg/resvg-wasm": "2.6.2", "@resvg/resvg-wasm-legacy": "npm:@resvg/resvg-wasm@2.4.1" } }, "sha512-0dTZFR7AEVrnchNR68VLWg/AL64e42q7WkT4Dc6PxMCRjnPuWrqY3qu01bN/w31pXgPIJTvnNHnqtw9WbZCUEw=="],
 
