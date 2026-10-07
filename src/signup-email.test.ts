@@ -67,7 +67,7 @@ describe("signup email delivery", () => {
     const [url, request] = send.mock.calls[0];
     expect(url).toBe("https://api.mailgun.net/v3/macon170.com/messages");
     expect(request.headers.Authorization).toBe(`Basic ${btoa("api:key-test")}`);
-    expect(request.redirect).toBe("error");
+    expect(request.redirect).toBe("manual");
     const body = request.body as FormData;
     expect(body.get("from")).toBe("Pack 170 Volunteers <volunteers@macon170.com>");
     expect(body.get("to")).toBe("parent@example.com");
