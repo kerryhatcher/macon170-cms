@@ -33,6 +33,12 @@ describe('invitation recovery page', () => {
     expect(page).not.toContain('data-resend-url=')
   })
 
+  it.each(['constructor', 'toString', '__proto__'])('renders an unfamiliar stored role %s without inheriting object properties', (role) => {
+    const page = renderInvitePage('csrf-test', [{id: 'pending-1', email: 'volunteer@example.test', first_name: 'Taylor', last_name: 'Volunteer', role}])
+    expect(page).toContain('volunteer@example.test')
+    expect(page).toContain(`<p class="pending-role">${role}</p>`)
+  })
+
   it('distinguishes a failed pending-list load from an empty list', () => {
     const page = renderInvitePage('csrf-test', null)
     expect(page).toContain('Pending invitations could not be loaded')

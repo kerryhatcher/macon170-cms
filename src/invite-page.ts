@@ -12,9 +12,9 @@ export interface PendingInvitation {
   role: string;
 }
 
-const roleLabels: Record<string, string> = {
-  viewer: "Viewer", author: "Author", editor: "Editor", admin: "Administrator",
-};
+const roleLabels = new Map([
+  ["viewer", "Viewer"], ["author", "Author"], ["editor", "Editor"], ["admin", "Administrator"],
+]);
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -27,7 +27,7 @@ export function renderInvitePage(csrfToken: string, pending: PendingInvitation[]
     : pending.length
     ? `<ul class="pending-list">${pending.map((invitation) => `<li>
       <div class="pending-details"><h3>${escapeHtml(`${invitation.first_name} ${invitation.last_name}`.trim())}</h3>
-      <p>${escapeHtml(invitation.email)}</p><p class="pending-role">${escapeHtml(roleLabels[invitation.role] ?? invitation.role)}</p></div>
+      <p>${escapeHtml(invitation.email)}</p><p class="pending-role">${escapeHtml(roleLabels.get(invitation.role) ?? invitation.role)}</p></div>
       <button type="button" data-resend-url="/admin/resend-invitation/${encodeURIComponent(invitation.id)}">Resend invitation</button>
       <div class="pending-feedback" data-resend-feedback aria-live="polite"></div>
     </li>`).join("")}</ul>`
