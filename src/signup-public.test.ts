@@ -84,7 +84,6 @@ function baseEnv(overrides: Record<string, unknown> = {}) {
     MAILGUN_DOMAIN: "macon170.com",
     SIGNUP_FROM_EMAIL: "volunteers@macon170.com",
     SIGNUP_RATE_LIMITER: { limit: async () => ({ success: true }) },
-    EMAIL: { send: vi.fn().mockResolvedValue(undefined) },
     DB: stubDb(),
     ...overrides,
   } as unknown as SignupBindings;
@@ -501,10 +500,11 @@ describe("public signup routing", () => {
         new Error("D1_ERROR: signup slot is full: ABORT"),
       );
     const env = baseEnv({ DB: stubDb({ batch }) });
+    const fetchImpl = vi.fn(() => turnstileOk());
     const response = await handlePublicSignupRequest(
       submit(validSubmission),
       env,
-      turnstileOk,
+      fetchImpl,
     );
     expect(response.status).toBe(409);
     const body = (await response.json()) as {
@@ -513,9 +513,11 @@ describe("public signup routing", () => {
     };
     expect(body.error.code).toBe("slot_full");
     expect(body.form?.slots[0]).toMatchObject({ quantityNeeded: 3 });
-    const email = (env as unknown as { EMAIL: { send: ReturnType<typeof vi.fn> } })
-      .EMAIL.send;
-    expect(email).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      expect.any(Object),
+    );
   });
 
   it("answers 409 slot_full when an edit oversubscribes a slot", async () => {
@@ -591,15 +593,18 @@ describe("public signup routing", () => {
     const env = baseEnv({
       DB: stubDb({ existingResponseId: "rsp-1", batch }),
     });
+    const fetchImpl = vi.fn(() => turnstileOk());
     const response = await handlePublicSignupRequest(
       submit(validSubmission),
       env,
-      turnstileOk,
+      fetchImpl,
     );
     expect(response.status).toBe(404);
-    const email = (env as unknown as { EMAIL: { send: ReturnType<typeof vi.fn> } })
-      .EMAIL.send;
-    expect(email).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      expect.any(Object),
+    );
   });
 
   it("rate limits on the connecting IP even when the email keeps changing", async () => {

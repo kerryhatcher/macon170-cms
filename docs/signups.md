@@ -195,7 +195,8 @@ Signup confirmation and resend messages use Mailgun's HTTP API with text and
 HTML bodies. `MAILGUN_API_KEY` is a domain-restricted Worker secret; the sending
 domain and sender are non-secret Worker variables. Each message explicitly
 disables open and click tracking and preserves the configured Reply-To address.
-SonicJS volunteer invitations continue to use the Cloudflare `EMAIL` binding.
+SonicJS volunteer invitations use the same Mailgun transport and credentials,
+with their own `INVITE_FROM_EMAIL`, `INVITE_FROM_NAME`, and `INVITE_REPLY_TO` settings.
 
 Deploy the nullable phone migration and compatibility code first. After the
 frontend phone field is live, set the preserved `SIGNUP_REQUIRE_PHONE` Worker

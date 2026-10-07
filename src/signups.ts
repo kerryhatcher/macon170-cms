@@ -1,4 +1,5 @@
 import type { Bindings } from "@sonicjs-cms/core";
+import type { MailgunBindings } from "./mailgun";
 
 export const SIGNUP_PERMISSION = "signups.manage";
 export const SIGNUP_VERSION = "v1";
@@ -11,7 +12,7 @@ export type SignupFormType = "rsvp" | "items";
 export type SignupFormState = "draft" | "open" | "closed";
 export type SignupResponseStatus = "unconfirmed" | "confirmed";
 
-export type SignupBindings = Bindings & {
+export type SignupBindings = Bindings & MailgunBindings & {
   APP_VERSION?: string;
   ENVIRONMENT?: string;
   PUBLIC_SITE_ORIGIN?: string;
@@ -21,20 +22,11 @@ export type SignupBindings = Bindings & {
   INVITE_FROM_EMAIL?: string;
   INVITE_FROM_NAME?: string;
   INVITE_REPLY_TO?: string;
-  MAILGUN_API_KEY?: string;
-  MAILGUN_API_ORIGIN?: string;
-  MAILGUN_DOMAIN?: string;
   SIGNUP_FROM_EMAIL?: string;
   SIGNUP_FROM_NAME?: string;
   SIGNUP_REPLY_TO?: string;
   SIGNUP_REQUIRE_PHONE?: string;
   SIGNUP_RATE_LIMITER: { limit(options: { key: string }): Promise<{ success: boolean }> };
-  // The real Cloudflare send_email binding, not a hand-rolled stub. A stub
-  // whose send() returned Promise<void> stopped this type from overlapping
-  // InviteEmailBindings in request-handler.ts, which forced an
-  // `as unknown as` double cast there and silently disabled compile-time
-  // checking on the invitation path.
-  EMAIL?: SendEmail;
 };
 
 export type SignupSlot = {

@@ -16,7 +16,7 @@ const secret = 'invitation-integration-test-secret'
 let sqlite: DatabaseSync
 let env: Bindings
 let authToken: string
-const send = vi.fn().mockResolvedValue({ messageId: 'test-message' })
+const send = vi.fn()
 const app = new Hono<{ Bindings: Bindings }>()
 app.route('/admin', adminUsersRoutes)
 app.route('/auth', authRoutes)
@@ -56,14 +56,16 @@ beforeEach(async () => {
     sqlite.exec(readFileSync(join(coreDir, 'migrations', file), 'utf8'))
   }
   sqlite.exec("INSERT INTO users (id, email, username, first_name, last_name, role, created_at, updated_at) VALUES ('admin-1', 'admin@example.test', 'admin', 'Admin', 'Volunteer', 'admin', 0, 0)")
-  send.mockClear()
+  send.mockReset().mockResolvedValue(new Response(null, { status: 200 }))
+  vi.stubGlobal('fetch', send)
   env = {
     DB: dbAdapter(), JWT_SECRET: secret, JWT_EXPIRES_IN: '1h',
-    EMAIL: { send }, INVITE_FROM_EMAIL: 'volunteers@example.test',
+    MAILGUN_API_KEY: 'key-test', MAILGUN_DOMAIN: 'macon170.com',
+    INVITE_FROM_EMAIL: 'volunteers@example.test',
   } as unknown as Bindings
   authToken = await AuthManager.generateToken('admin-1', 'admin@example.test', 'admin', secret)
 })
-afterEach(() => sqlite.close())
+afterEach(() => { sqlite.close(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('SonicJS invitation schema compatibility', () => {
   it('creates distinct pending users and emails setup links without exposing tokens', async () => {
@@ -81,7 +83,32 @@ describe('SonicJS invitation schema compatibility', () => {
       expect(row.invitation_token).toEqual(expect.any(String))
     }
     expect(send).toHaveBeenCalledTimes(2)
-    expect(send.mock.calls[0]![0].text).toContain('/auth/accept-invitation?token=')
+    expect((send.mock.calls[0]![1].body as FormData).get('text')).toContain('/auth/accept-invitation?token=')
+  })
+
+  it('keeps a failed invitation pending and resends a fresh token to its stored recipient', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    send.mockResolvedValueOnce(new Response('rejected', { status: 503 }))
+    const failed = await invite()
+    expect(failed.status).toBe(502)
+    const pending = sqlite.prepare('SELECT id, invitation_token, is_active FROM users WHERE email = ?').get('volunteer@example.test')!
+    expect(pending.is_active).toBe(0)
+    const failedBody = await failed.text()
+    expect(failedBody).toContain('invite_delivery_failed')
+    expect(failedBody).not.toContain(String(pending.invitation_token))
+    const response = await handle(new Request(`https://cms.example/admin/resend-invitation/${pending.id}`, {
+      method: 'POST', headers: { Origin: 'https://cms.example', Authorization: `Bearer ${authToken}` },
+    }), env, ctx)
+    expect(response.status).toBe(200)
+    const updated = sqlite.prepare('SELECT invitation_token, is_active FROM users WHERE id = ?').get(String(pending.id))!
+    expect(updated.is_active).toBe(0)
+    expect(updated.invitation_token).not.toBe(pending.invitation_token)
+    expect(send).toHaveBeenCalledTimes(2)
+    const message = send.mock.calls[1]![1].body as FormData
+    expect(message.get('to')).toBe('volunteer@example.test')
+    expect(message.get('text')).toContain(String(updated.invitation_token))
+    expect(await response.text()).not.toContain(String(updated.invitation_token))
+    expect(sqlite.prepare('SELECT count(*) AS count FROM users').get()!.count).toBe(2)
   })
 
   it('lets the recipient choose a username and password and consumes the token', async () => {
