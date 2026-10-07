@@ -33,6 +33,7 @@
     "drizzle-kit": "^0.31.7",
     "drizzle-orm": "^0.44.7",
     "hono": "^4.10.7",
+    "miniflare": "4.20260722.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.15",

@@ -55,7 +55,9 @@ export async function sendMailgunEmail(
         method: "POST",
         headers: { Authorization: `Basic ${btoa(`api:${env.MAILGUN_API_KEY}`)}` },
         body,
-        redirect: "error",
+        // Workers supports only manual/follow. Reject redirects below rather
+        // than forwarding the API credential to a redirected destination.
+        redirect: "manual",
       },
     );
   } catch {
