@@ -1,4 +1,5 @@
 import type { SignupBindings } from "./signups";
+import { sendMailgunEmail } from "./mailgun";
 
 export type SignupEmailOptions = {
   name: string;
@@ -91,35 +92,10 @@ export async function sendSignupLinkEmail(
   }
 
   const rendered = renderSignupEmail(options);
-  const body = new FormData();
-  body.set(
-    "from",
-    `${env.SIGNUP_FROM_NAME ?? "Pack 170 Volunteers"} <${env.SIGNUP_FROM_EMAIL}>`,
-  );
-  body.set("to", recipient.email);
-  body.set("subject", rendered.subject);
-  body.set("text", rendered.text);
-  body.set("html", rendered.html);
-  body.set("o:tracking", "no");
-  body.set("o:tracking-clicks", "no");
-  body.set("o:tracking-opens", "no");
-  if (env.SIGNUP_REPLY_TO) body.set("h:Reply-To", env.SIGNUP_REPLY_TO);
-
-  const apiOrigin = (env.MAILGUN_API_ORIGIN ?? "https://api.mailgun.net").replace(
-    /\/$/,
-    "",
-  );
-  const response = await fetchImpl(
-    `${apiOrigin}/v3/${encodeURIComponent(env.MAILGUN_DOMAIN)}/messages`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${btoa(`api:${env.MAILGUN_API_KEY}`)}`,
-      },
-      body,
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`Mailgun rejected the signup email (${response.status}).`);
-  }
+  await sendMailgunEmail(env, {
+    from: `${env.SIGNUP_FROM_NAME ?? "Pack 170 Volunteers"} <${env.SIGNUP_FROM_EMAIL}>`,
+    to: recipient.email,
+    ...rendered,
+    replyTo: env.SIGNUP_REPLY_TO,
+  }, fetchImpl);
 }

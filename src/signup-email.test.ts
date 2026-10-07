@@ -67,6 +67,7 @@ describe("signup email delivery", () => {
     const [url, request] = send.mock.calls[0];
     expect(url).toBe("https://api.mailgun.net/v3/macon170.com/messages");
     expect(request.headers.Authorization).toBe(`Basic ${btoa("api:key-test")}`);
+    expect(request.redirect).toBe("error");
     const body = request.body as FormData;
     expect(body.get("from")).toBe("Pack 170 Volunteers <volunteers@macon170.com>");
     expect(body.get("to")).toBe("parent@example.com");
@@ -116,5 +117,11 @@ describe("signup email delivery", () => {
         vi.fn().mockResolvedValue(new Response("rejected", { status: 500 })),
       ),
     ).rejects.toThrow("500");
+  });
+
+  it("sanitizes network failures instead of exposing credentials or message content", async () => {
+    await expect(sendSignupLinkEmail(env, { email: "parent@example.com", name: "Parent" }, options,
+      vi.fn().mockRejectedValue(new Error("key-test token=abc parent@example.com")),
+    )).rejects.toThrow(/^Mailgun request failed\.$/);
   });
 });

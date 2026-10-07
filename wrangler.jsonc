@@ -15,12 +15,6 @@
     }
   ],
   "r2_buckets": [{ "binding": "MEDIA_BUCKET", "bucket_name": "macon170-cms-media" }],
-  "send_email": [
-    {
-      "name": "EMAIL",
-      "allowed_sender_addresses": ["volunteers@macon170.com"]
-    }
-  ],
   "ratelimits": [
     {
       "name": "CONTACT_RATE_LIMITER",

@@ -26,6 +26,11 @@ import { renderDashPage } from "./dash-page";
 import { renderLeadershipPage } from "./leadership-page";
 import { renderInvitePage } from "./invite-page";
 import {
+  MailgunDeliveryError,
+  sendMailgunEmail,
+  type MailgunBindings,
+} from "./mailgun";
+import {
   CONTACT_API_BASE,
   CONTACT_QUEUE_PATH,
   LEGACY_CONTACT_QUEUE_PATH,
@@ -62,8 +67,7 @@ type AuthenticatedUser = {
   role: string;
 };
 
-type InviteEmailBindings = CalendarBindings & {
-  EMAIL?: SendEmail;
+type InviteEmailBindings = CalendarBindings & MailgunBindings & {
   INVITE_FROM_EMAIL?: string;
   INVITE_FROM_NAME?: string;
   INVITE_REPLY_TO?: string;
@@ -392,7 +396,11 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
 
     if (isInvitationDeliveryRequest(request, pathname)) {
       const inviteEnv = env as InviteEmailBindings;
-      if (!inviteEnv.EMAIL || !inviteEnv.INVITE_FROM_EMAIL) {
+      if (
+        !inviteEnv.MAILGUN_API_KEY ||
+        !inviteEnv.MAILGUN_DOMAIN ||
+        !inviteEnv.INVITE_FROM_EMAIL
+      ) {
         return errorResponse(
           503,
           "invite_email_unavailable",
@@ -461,20 +469,20 @@ async function deliverInvitationEmail(
   }
 
   try {
-    const message: EmailMessageBuilder = {
-      from: {
-        email: env.INVITE_FROM_EMAIL!,
-        name: env.INVITE_FROM_NAME ?? "Pack 170 Volunteers",
-      },
-      to: { email: recipient.email, name: recipient.name },
+    await sendMailgunEmail(env, {
+      from: `${env.INVITE_FROM_NAME ?? "Pack 170 Volunteers"} <${env.INVITE_FROM_EMAIL!}>`,
+      to: recipient.email,
       subject: "Set up your Pack 170 CMS account",
       text: invitationText(recipient.name, invitationUrl.toString()),
       html: invitationHtml(recipient.name, invitationUrl.toString()),
-    };
-    if (env.INVITE_REPLY_TO) message.replyTo = env.INVITE_REPLY_TO;
-    await env.EMAIL!.send(message);
+      replyTo: env.INVITE_REPLY_TO,
+    });
   } catch (error) {
-    console.error("Volunteer invitation email failed", error);
+    console.error(JSON.stringify({
+      event: "invite_delivery_failed",
+      provider: "mailgun",
+      status: error instanceof MailgunDeliveryError ? error.status ?? null : null,
+    }));
     return invitationResponse(
       {
         error: "invite_delivery_failed",

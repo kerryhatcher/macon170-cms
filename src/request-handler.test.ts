@@ -1,10 +1,11 @@
 import type { Bindings } from '@sonicjs-cms/core'
 import { AuthManager, generateCsrfToken } from '@sonicjs-cms/core/middleware'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { configuredCorsOrigins, createCmsRequestHandler } from '../src/request-handler'
 
 const executionContext = {} as ExecutionContext
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 const cmsEnv = (origins?: string, db?: unknown, appVersion = 'test-version') => ({
   APP_VERSION: appVersion,
   CORS_ORIGINS: origins,
@@ -40,8 +41,9 @@ describe('CMS request guard', () => {
     expect(appFetch).not.toHaveBeenCalled()
   })
 
-  it('sends SonicJS invitation links through the Worker email binding without exposing the token', async () => {
-    const email = { send: vi.fn().mockResolvedValue({ messageId: 'email-123' }) }
+  it('sends SonicJS invitation links through Mailgun without exposing the token', async () => {
+    const send = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', send)
     const appFetch = vi.fn().mockResolvedValue(Response.json({
       success: true,
       invitation_link: 'https://cms.example/auth/accept-invitation?token=secret-token',
@@ -56,7 +58,8 @@ describe('CMS request guard', () => {
       new Request('https://cms.example/admin/invite-user', { method: 'POST' }),
       {
         ...cmsEnv(),
-        EMAIL: email,
+        MAILGUN_API_KEY: 'key-test',
+        MAILGUN_DOMAIN: 'macon170.com',
         INVITE_FROM_EMAIL: 'volunteers@macon170.com',
         INVITE_FROM_NAME: 'Pack 170 Volunteers',
         INVITE_REPLY_TO: 'contact@macon170.com',
@@ -64,13 +67,19 @@ describe('CMS request guard', () => {
       executionContext,
     )
 
-    expect(email.send).toHaveBeenCalledWith(expect.objectContaining({
-      from: { email: 'volunteers@macon170.com', name: 'Pack 170 Volunteers' },
-      to: { email: 'volunteer@example.com', name: 'Taylor Volunteer' },
-      replyTo: 'contact@macon170.com',
-      subject: 'Set up your Pack 170 CMS account',
-      text: expect.stringContaining('token=secret-token'),
-    }))
+    expect(response.status).toBe(200)
+    const [url, request] = send.mock.calls[0]!
+    expect(url).toBe('https://api.mailgun.net/v3/macon170.com/messages')
+    expect(request.headers.Authorization).toBe(`Basic ${btoa('api:key-test')}`)
+    const body = request.body as FormData
+    expect(body.get('from')).toBe('Pack 170 Volunteers <volunteers@macon170.com>')
+    expect(body.get('to')).toBe('volunteer@example.com')
+    expect(body.get('h:Reply-To')).toBe('contact@macon170.com')
+    expect(body.get('text')).toContain('token=secret-token')
+    expect(body.get('html')).toContain('token=secret-token')
+    for (const field of ['o:tracking', 'o:tracking-clicks', 'o:tracking-opens']) {
+      expect(body.get(field)).toBe('no')
+    }
     await expect(response.json()).resolves.toEqual({
       success: true,
       message: 'Invitation email sent. The setup link expires in seven days.',
@@ -79,7 +88,8 @@ describe('CMS request guard', () => {
   })
 
   it('does not expose an invitation link when email delivery fails', async () => {
-    const email = { send: vi.fn().mockRejectedValue(new Error('Sender is not verified')) }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('secret-token', { status: 403 })))
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     const appFetch = vi.fn().mockResolvedValue(Response.json({
       success: true,
       invitation_link: 'https://cms.example/auth/accept-invitation?token=secret-token',
@@ -89,7 +99,8 @@ describe('CMS request guard', () => {
       new Request('https://cms.example/admin/invite-user', { method: 'POST' }),
       {
         ...cmsEnv(),
-        EMAIL: email,
+        MAILGUN_API_KEY: 'key-test',
+        MAILGUN_DOMAIN: 'macon170.com',
         INVITE_FROM_EMAIL: 'volunteers@macon170.com',
       } as unknown as Bindings,
       executionContext,
@@ -102,6 +113,24 @@ describe('CMS request guard', () => {
       invitationId: 'invitee-1',
     })
     expect(JSON.stringify(body)).not.toContain('secret-token')
+    expect(JSON.stringify(log.mock.calls)).toContain('403')
+    expect(JSON.stringify(log.mock.calls)).not.toContain('secret-token')
+    expect(JSON.stringify(log.mock.calls)).not.toContain('key-test')
+  })
+
+  it.each(['MAILGUN_API_KEY', 'MAILGUN_DOMAIN', 'INVITE_FROM_EMAIL'])('rejects missing %s before account creation even with a legacy binding', async (missing) => {
+    const appFetch = vi.fn().mockResolvedValue(Response.json({ success: true }))
+    const bindings: Record<string, unknown> = {
+      ...cmsEnv(), EMAIL: { send: vi.fn() }, MAILGUN_API_KEY: 'key-test',
+      MAILGUN_DOMAIN: 'macon170.com', INVITE_FROM_EMAIL: 'volunteers@macon170.com',
+    }
+    delete bindings[missing]
+    const response = await createCmsRequestHandler(appFetch)(
+      new Request('https://cms.example/admin/invite-user', { method: 'POST' }),
+      bindings as unknown as Bindings, executionContext,
+    )
+    expect(response.status).toBe(503)
+    expect(appFetch).not.toHaveBeenCalled()
   })
 
   it('protects the volunteer invitation page with active CMS admin access', async () => {

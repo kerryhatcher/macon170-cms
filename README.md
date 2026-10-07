@@ -158,9 +158,8 @@ GitHub Actions validates pull requests and deploys only pushes to `main`. Config
 
 The production `JWT_SECRET`, `TURNSTILE_SECRET`, and domain-restricted
 `MAILGUN_API_KEY` stay in the Worker as Cloudflare secrets; ordinary deployments
-preserve them and do not copy their values into GitHub. Mailgun is used only for
-event signup confirmation and resend messages. Volunteer invitations continue
-to use the Cloudflare `EMAIL` binding.
+preserve them and do not copy their values into GitHub. Mailgun sends event
+signup confirmations and volunteer invitations, including resend messages.
 
 ## Volunteer invitations
 
@@ -169,11 +168,20 @@ An administrator opens `/admin/users/invite`, selects the least-privileged
 role, and sends a seven-day account-setup link. The recipient creates their
 own password; public registration remains disabled.
 
-Before deploying this feature, onboard `macon170.com` to Cloudflare Email
-Service and verify `volunteers@macon170.com` as a sender. The committed
-`send_email` binding is intentionally restricted to that sender. Email
-delivery uses Cloudflare's Worker binding; do not configure the SonicJS
-Resend plugin or place a provider API key in the CMS database.
+Delivery uses the same verified Mailgun domain and domain-restricted
+`MAILGUN_API_KEY` Worker secret as signup confirmations. `MAILGUN_DOMAIN`
+and `INVITE_FROM_EMAIL` must be configured; `INVITE_FROM_NAME` and
+`INVITE_REPLY_TO` control the sender name and replies. Tracking is disabled
+for account-setup links. Do not configure the SonicJS Resend plugin or place
+a provider API key in the CMS database.
+
+If delivery fails after account creation, the account remains inactive.
+Resolve the Mailgun configuration or provider error, then use the authenticated
+admin endpoint `POST /admin/resend-invitation/:id` for the pending user, with
+the same Origin and CSRF protection as invitation creation. Do not create
+another account. Resend replaces the previous invitation token. Worker logs record
+`invite_delivery_failed` and the provider HTTP status, without email contents
+or tokens. A null status means no provider HTTP response was available.
 
 SonicJS 2.19.0 omits the required `users.username` column when creating an
 invitation. The Bun patch in `patches/` supplies a unique temporary username;
