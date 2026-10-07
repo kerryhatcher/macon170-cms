@@ -24,7 +24,7 @@ import {
 import { renderContactAdminPage } from "./contact-admin-page";
 import { renderDashPage } from "./dash-page";
 import { renderLeadershipPage } from "./leadership-page";
-import { renderInvitePage } from "./invite-page";
+import { renderInvitePage, type PendingInvitation } from "./invite-page";
 import {
   MailgunDeliveryError,
   sendMailgunEmail,
@@ -246,7 +246,19 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
       }
       const csrf = await ensureCsrfToken(request, env);
       if (csrf instanceof Response) return csrf;
-      const response = htmlResponse(renderInvitePage(csrf.token));
+      let pending: PendingInvitation[] | null = null;
+      try {
+        const result = await env.DB.prepare(
+          `SELECT id, email, first_name, last_name, role FROM users
+           WHERE is_active = 0 AND invitation_token IS NOT NULL
+             AND accepted_invitation_at IS NULL
+           ORDER BY invited_at DESC, id ASC LIMIT 100`,
+        ).all<PendingInvitation>();
+        pending = result.results;
+      } catch {
+        console.error(JSON.stringify({ event: "pending_invitations_load_failed" }));
+      }
+      const response = htmlResponse(renderInvitePage(csrf.token, pending));
       response.headers.append("Set-Cookie", csrf.cookie);
       return response;
     }
