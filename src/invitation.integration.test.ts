@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import type { Bindings } from '@sonicjs-cms/core'
-import { AuthManager } from '@sonicjs-cms/core/middleware'
+import { AuthManager, csrfProtection } from '@sonicjs-cms/core/middleware'
 import { adminUsersRoutes, authRoutes } from '@sonicjs-cms/core/routes'
 import { Hono } from 'hono'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -18,6 +18,7 @@ let env: Bindings
 let authToken: string
 const send = vi.fn()
 const app = new Hono<{ Bindings: Bindings }>()
+app.use('*', csrfProtection())
 app.route('/admin', adminUsersRoutes)
 app.route('/auth', authRoutes)
 const handle = createCmsRequestHandler(app.fetch.bind(app))
@@ -31,6 +32,7 @@ function dbAdapter() {
       return {
         bind(...params: SQLInputValue[]) { values = params; return this },
         async first() { return statement.get(...values) ?? null },
+        async all() { return { success: true, results: statement.all(...values) } },
         async run() { return { success: true, meta: statement.run(...values) } },
       }
     },
@@ -68,6 +70,71 @@ beforeEach(async () => {
 afterEach(() => { sqlite.close(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('SonicJS invitation schema compatibility', () => {
+  it('offers resend only for pending invitations without rendering bearer credentials', async () => {
+    await invite('pending@example.test')
+    await invite('accepted@example.test')
+    sqlite.exec("UPDATE users SET is_active = 1, accepted_invitation_at = 1 WHERE email = 'accepted@example.test'")
+    sqlite.exec("INSERT INTO users (id, email, username, first_name, last_name, role, is_active, created_at, updated_at) VALUES ('system-1', 'system@example.test', 'system', 'System', 'Forms', 'viewer', 0, 0, 0)")
+    const pending = sqlite.prepare('SELECT id, invitation_token FROM users WHERE email = ?').get('pending@example.test')!
+    const response = await handle(new Request('https://cms.example/admin/users/invite', {
+      headers: { Cookie: `auth_token=${authToken}` },
+    }), env, ctx)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    const page = await response.text()
+    expect(page).toContain('pending@example.test')
+    expect(page).toContain(`data-resend-url="/admin/resend-invitation/${pending.id}"`)
+    expect(page).not.toContain('accepted@example.test')
+    expect(page).not.toContain('system@example.test')
+    expect(page).not.toContain(String(pending.invitation_token))
+  })
+
+  it('resends from the cookie-authenticated page with CSRF, preserving the stored role and recipient', async () => {
+    await invite()
+    const pending = sqlite.prepare('SELECT id, invitation_token FROM users WHERE email = ?').get('volunteer@example.test')!
+    const page = await handle(new Request('https://cms.example/admin/users/invite', {
+      headers: { Cookie: `auth_token=${authToken}` },
+    }), env, ctx)
+    const cookie = page.headers.get('Set-Cookie')!.split(';')[0]!
+    const csrf = decodeURIComponent(cookie.slice('csrf_token='.length))
+    const response = await handle(new Request(`https://cms.example/admin/resend-invitation/${pending.id}`, {
+      method: 'POST', headers: {
+        Origin: 'https://cms.example', Cookie: `auth_token=${authToken}; ${cookie}`,
+        'X-CSRF-Token': csrf,
+      },
+    }), env, ctx)
+    expect(response.status).toBe(200)
+    const updated = sqlite.prepare('SELECT invitation_token, role, is_active FROM users WHERE id=?').get(String(pending.id))!
+    expect(updated).toMatchObject({ role: 'editor', is_active: 0 })
+    expect(updated.invitation_token).not.toBe(pending.invitation_token)
+    const message = send.mock.calls.at(-1)![1].body as FormData
+    expect(message.get('to')).toBe('volunteer@example.test')
+    expect(message.get('text')).toContain(String(updated.invitation_token))
+    expect(await response.text()).not.toContain(String(updated.invitation_token))
+    expect(sqlite.prepare('SELECT count(*) AS count FROM users').get()!.count).toBe(2)
+  })
+
+  it('rejects a cookie-authenticated resend without CSRF before rotating the invitation', async () => {
+    await invite()
+    const pending = sqlite.prepare('SELECT id, invitation_token FROM users WHERE email = ?').get('volunteer@example.test')!
+    const response = await handle(new Request(`https://cms.example/admin/resend-invitation/${pending.id}`, {
+      method: 'POST', headers: { Origin: 'https://cms.example', Cookie: `auth_token=${authToken}` },
+    }), env, ctx)
+    expect(response.status).toBe(403)
+    expect(sqlite.prepare('SELECT invitation_token FROM users WHERE id=?').get(String(pending.id))!.invitation_token).toBe(pending.invitation_token)
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps pending recipient details hidden from non-administrators', async () => {
+    await invite()
+    const viewer = await AuthManager.generateToken('viewer-1', 'viewer@example.test', 'viewer', secret)
+    const response = await handle(new Request('https://cms.example/admin/users/invite', {
+      headers: { Cookie: `auth_token=${viewer}` },
+    }), env, ctx)
+    expect(response.status).toBe(403)
+    expect(await response.text()).not.toContain('volunteer@example.test')
+  })
+
   it('creates distinct pending users and emails setup links without exposing tokens', async () => {
     for (const email of ['first@example.test', 'second@example.test']) {
       const response = await invite(email)

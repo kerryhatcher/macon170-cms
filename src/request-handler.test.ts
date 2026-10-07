@@ -155,6 +155,7 @@ describe('CMS request guard', () => {
       prepare: () => ({
         bind() { return this },
         first: async () => ({ id: 'admin-1' }),
+        all: async () => ({ results: [] }),
       }),
     }
     const response = await handleRequest(
@@ -167,6 +168,23 @@ describe('CMS request guard', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('Set-Cookie')).toContain('csrf_token=')
     await expect(response.text()).resolves.toContain("'X-CSRF-Token':CSRF")
+  })
+
+  it('keeps invitation creation available when the pending list fails without leaking database errors', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const token = await AuthManager.generateToken('admin-1', 'admin@example.test', 'admin', 'test-secret-that-is-not-used-in-production')
+    const db = { prepare: () => ({
+      bind() { return this }, first: async () => ({id: 'admin-1'}),
+      all: async () => { throw new Error('private database details') },
+    }) }
+    const response = await createCmsRequestHandler(vi.fn())(new Request('https://cms.example/admin/users/invite', {
+      headers: {Cookie: `auth_token=${token}`},
+    }), cmsEnv(undefined, db), executionContext)
+    expect(response.status).toBe(200)
+    const page = await response.text()
+    expect(page).toContain('Pending invitations could not be loaded')
+    expect(page).toContain('id="invite-form"')
+    expect(page).not.toContain('private database details')
   })
 
   it('exposes the deployed version without caching', async () => {

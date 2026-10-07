@@ -176,8 +176,12 @@ for account-setup links. Do not configure the SonicJS Resend plugin or place
 a provider API key in the CMS database.
 
 If delivery fails after account creation, the account remains inactive.
-Resolve the Mailgun configuration or provider error, then use the authenticated
-admin endpoint `POST /admin/resend-invitation/:id` for the pending user, with
+Resolve the Mailgun configuration or provider error, then open `/admin/users/invite`
+and use **Resend invitation** beside the existing volunteer under **Pending invitations**.
+This preserves the stored recipient and role; it does not create another account
+or activate the volunteer. The page shows up to 100 pending invitations and never
+includes setup tokens. Refresh the list after creating an invitation.
+The control uses the authenticated admin endpoint `POST /admin/resend-invitation/:id`, with
 the same Origin and CSRF protection as invitation creation. Do not create
 another account. Resend replaces the previous invitation token. Worker logs record
 `invite_delivery_failed` and the provider HTTP status, without email contents
