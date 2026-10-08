@@ -191,11 +191,13 @@ nightly run until the migration lands.
 
 ## Email delivery and staged phone rollout
 
-Signup confirmation and resend messages use Mailgun's HTTP API with text and
-HTML bodies. `MAILGUN_API_KEY` is a domain-restricted Worker secret; the sending
-domain and sender are non-secret Worker variables. Each message explicitly
+Signup confirmation and resend messages use Postmark's HTTP API with text and
+HTML bodies in the transactional `outbound` stream. `POSTMARK_SERVER_TOKEN`
+is the Macon170.com Server API Token stored as a Worker secret; sender settings
+are non-secret Worker variables. Verify the sending domain in Postmark and
+enable live account sending before deploying. Each message explicitly
 disables open and click tracking and preserves the configured Reply-To address.
-SonicJS volunteer invitations use the same Mailgun transport and credentials,
+SonicJS volunteer invitations use the same Postmark transport and credentials,
 with their own `INVITE_FROM_EMAIL`, `INVITE_FROM_NAME`, and `INVITE_REPLY_TO` settings.
 
 Deploy the nullable phone migration and compatibility code first. After the
@@ -219,7 +221,8 @@ permission rows, over-subscription abort, and claim cascade.
 ## Cutover
 
 1. Confirm `SIGNUP_RATE_LIMITER` is present in `wrangler.jsonc` and provision
-   the domain-restricted `MAILGUN_API_KEY` Worker secret.
+   the `POSTMARK_SERVER_TOKEN` Worker secret (never the Account API Token or
+   validation-only `POSTMARK_API_TEST`).
 2. Deploy the CMS and apply its migrations in an approved window.
 3. Verify `/admin/signups` renders for an administrator and returns 403 for a
    user without `signups.manage`.
@@ -235,7 +238,9 @@ Do not deploy or apply remote migrations until separately approved.
 - `409` with code `slot_full`: expected when a slot filled between page load
   and submit. The response body carries the refreshed form; re-render it.
 - `502` on submit: the response saved but email delivery failed. The family
-  submits again to resend; check the Mailgun secret, domain, and sender address.
+  submits again to resend; check the Postmark server token, verified domain,
+  account approval, sender address, and Activity. Check Activity before retrying
+  an ambiguous failure to avoid duplicates.
 - `security` on a valid-looking request: confirm the request `Origin`
   matches `PUBLIC_SITE_ORIGIN` and that the Turnstile hostname and action
   match the committed settings.

@@ -165,8 +165,7 @@ function adminDb(options: {
 function adminEnv(db: unknown) {
   return {
     PUBLIC_SITE_ORIGIN: "https://www.macon170.com",
-    MAILGUN_API_KEY: "key-test",
-    MAILGUN_DOMAIN: "macon170.com",
+    POSTMARK_SERVER_TOKEN: "key-test",
     SIGNUP_FROM_EMAIL: "volunteers@macon170.com",
     DB: db,
   } as unknown as SignupBindings;
@@ -299,7 +298,7 @@ describe("signup admin API", () => {
   it("rotates the token and emails the family on resend", async () => {
     const { db, statements } = adminDb();
     const env = adminEnv(db);
-    const send = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    const send = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ErrorCode: 0, MessageID: "message-test", Message: "OK", To: "parent@example.com", SubmittedAt: "2026-10-07T22:00:00Z" })));
     const response = await handleAdminSignupRequest(
       adminRequest("/responses/rsp-1/resend", { method: "POST" }),
       env,
@@ -314,7 +313,7 @@ describe("signup admin API", () => {
       true,
     );
     expect(send).toHaveBeenCalledOnce();
-    expect((send.mock.calls[0][1].body as FormData).get("to")).toBe(
+    expect(JSON.parse(send.mock.calls[0][1].body).To).toBe(
       "parent@example.com",
     );
   });

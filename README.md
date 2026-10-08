@@ -156,9 +156,9 @@ GitHub Actions validates pull requests and deploys only pushes to `main`. Config
 - `CLOUDFLARE_API_TOKEN` — deployment token for the Pack 170 Cloudflare account
 - `CLOUDFLARE_ACCOUNT_ID` — Pack 170 Cloudflare account ID
 
-The production `JWT_SECRET`, `TURNSTILE_SECRET`, and domain-restricted
-`MAILGUN_API_KEY` stay in the Worker as Cloudflare secrets; ordinary deployments
-preserve them and do not copy their values into GitHub. Mailgun sends event
+The production `JWT_SECRET`, `TURNSTILE_SECRET`, and `POSTMARK_SERVER_TOKEN`
+stay in the Worker as Cloudflare secrets; ordinary deployments
+preserve them and do not copy their values into GitHub. Postmark sends event
 signup confirmations and volunteer invitations, including resend messages.
 
 ## Volunteer invitations
@@ -168,15 +168,18 @@ An administrator opens `/admin/users/invite`, selects the least-privileged
 role, and sends a seven-day account-setup link. The recipient creates their
 own password; public registration remains disabled.
 
-Delivery uses the same verified Mailgun domain and domain-restricted
-`MAILGUN_API_KEY` Worker secret as signup confirmations. `MAILGUN_DOMAIN`
-and `INVITE_FROM_EMAIL` must be configured; `INVITE_FROM_NAME` and
+Delivery uses the same verified Postmark domain and Macon170.com Server API Token
+(`POSTMARK_SERVER_TOKEN` Worker secret) as signup confirmations.
+The Postmark account must be approved for live sending, and `INVITE_FROM_EMAIL`
+must be configured; `INVITE_FROM_NAME` and
 `INVITE_REPLY_TO` control the sender name and replies. Tracking is disabled
 for account-setup links. Do not configure the SonicJS Resend plugin or place
-a provider API key in the CMS database.
+a provider API key in the CMS database. Messages explicitly use the transactional
+`outbound` stream. `POSTMARK_API_TEST` only validates requests without sending;
+the CMS rejects that token in production before creating an invitation.
 
 If delivery fails after account creation, the account remains inactive.
-Resolve the Mailgun configuration or provider error, then open `/admin/users/invite`
+Resolve the Postmark configuration or provider error, then open `/admin/users/invite`
 and use **Resend invitation** beside the existing volunteer under **Pending invitations**.
 This preserves the stored recipient and role; it does not create another account
 or activate the volunteer. The page shows up to 100 pending invitations and never
@@ -185,7 +188,13 @@ The control uses the authenticated admin endpoint `POST /admin/resend-invitation
 the same Origin and CSRF protection as invitation creation. Do not create
 another account. Resend replaces the previous invitation token. Worker logs record
 `invite_delivery_failed` and the provider HTTP status, without email contents
-or tokens. A null status means no provider HTTP response was available.
+or tokens. A null status means a network failure or an unconfirmed/malformed
+provider response. Success requires an HTTP success response with `ErrorCode: 0`
+and a nonempty `MessageID`. Check Postmark Activity to verify delivery; acceptance
+does not prove inbox placement. Sends are not automatically retried, because an
+ambiguous response could otherwise send duplicate setup links. A 15-second
+deadline covers both the provider request and its response body. Check Activity
+before manually retrying an ambiguous failure.
 
 SonicJS 2.19.0 omits the required `users.username` column when creating an
 invitation. The Bun patch in `patches/` supplies a unique temporary username;

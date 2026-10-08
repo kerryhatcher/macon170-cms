@@ -58,11 +58,11 @@ beforeEach(async () => {
     sqlite.exec(readFileSync(join(coreDir, 'migrations', file), 'utf8'))
   }
   sqlite.exec("INSERT INTO users (id, email, username, first_name, last_name, role, created_at, updated_at) VALUES ('admin-1', 'admin@example.test', 'admin', 'Admin', 'Volunteer', 'admin', 0, 0)")
-  send.mockReset().mockResolvedValue(new Response(null, { status: 200 }))
+  send.mockReset().mockImplementation(() => Promise.resolve(Response.json({ ErrorCode: 0, MessageID: 'message-test', Message: 'OK', To: 'volunteer@example.test', SubmittedAt: '2026-10-07T22:00:00Z' })))
   vi.stubGlobal('fetch', send)
   env = {
     DB: dbAdapter(), JWT_SECRET: secret, JWT_EXPIRES_IN: '1h',
-    MAILGUN_API_KEY: 'key-test', MAILGUN_DOMAIN: 'macon170.com',
+    POSTMARK_SERVER_TOKEN: 'key-test',
     INVITE_FROM_EMAIL: 'volunteers@example.test',
   } as unknown as Bindings
   authToken = await AuthManager.generateToken('admin-1', 'admin@example.test', 'admin', secret)
@@ -107,9 +107,9 @@ describe('SonicJS invitation schema compatibility', () => {
     const updated = sqlite.prepare('SELECT invitation_token, role, is_active FROM users WHERE id=?').get(String(pending.id))!
     expect(updated).toMatchObject({ role: 'editor', is_active: 0 })
     expect(updated.invitation_token).not.toBe(pending.invitation_token)
-    const message = send.mock.calls.at(-1)![1].body as FormData
-    expect(message.get('to')).toBe('volunteer@example.test')
-    expect(message.get('text')).toContain(String(updated.invitation_token))
+    const message = JSON.parse(send.mock.calls.at(-1)![1].body)
+    expect(message.To).toBe('volunteer@example.test')
+    expect(message.TextBody).toContain(String(updated.invitation_token))
     expect(await response.text()).not.toContain(String(updated.invitation_token))
     expect(sqlite.prepare('SELECT count(*) AS count FROM users').get()!.count).toBe(2)
   })
@@ -150,7 +150,7 @@ describe('SonicJS invitation schema compatibility', () => {
       expect(row.invitation_token).toEqual(expect.any(String))
     }
     expect(send).toHaveBeenCalledTimes(2)
-    expect((send.mock.calls[0]![1].body as FormData).get('text')).toContain('/auth/accept-invitation?token=')
+    expect(JSON.parse(send.mock.calls[0]![1].body).TextBody).toContain('/auth/accept-invitation?token=')
   })
 
   it('keeps a failed invitation pending and resends a fresh token to its stored recipient', async () => {
@@ -171,9 +171,9 @@ describe('SonicJS invitation schema compatibility', () => {
     expect(updated.is_active).toBe(0)
     expect(updated.invitation_token).not.toBe(pending.invitation_token)
     expect(send).toHaveBeenCalledTimes(2)
-    const message = send.mock.calls[1]![1].body as FormData
-    expect(message.get('to')).toBe('volunteer@example.test')
-    expect(message.get('text')).toContain(String(updated.invitation_token))
+    const message = JSON.parse(send.mock.calls[1]![1].body)
+    expect(message.To).toBe('volunteer@example.test')
+    expect(message.TextBody).toContain(String(updated.invitation_token))
     expect(await response.text()).not.toContain(String(updated.invitation_token))
     expect(sqlite.prepare('SELECT count(*) AS count FROM users').get()!.count).toBe(2)
   })

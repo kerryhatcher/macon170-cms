@@ -41,8 +41,8 @@ describe('CMS request guard', () => {
     expect(appFetch).not.toHaveBeenCalled()
   })
 
-  it('sends SonicJS invitation links through Mailgun without exposing the token', async () => {
-    const send = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+  it('sends SonicJS invitation links through Postmark without exposing the token', async () => {
+    const send = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ErrorCode: 0, MessageID: 'message-test', Message: 'OK', To: 'volunteer@example.com', SubmittedAt: '2026-10-07T22:00:00Z' })))
     vi.stubGlobal('fetch', send)
     const appFetch = vi.fn().mockResolvedValue(Response.json({
       success: true,
@@ -58,8 +58,7 @@ describe('CMS request guard', () => {
       new Request('https://cms.example/admin/invite-user', { method: 'POST' }),
       {
         ...cmsEnv(),
-        MAILGUN_API_KEY: 'key-test',
-        MAILGUN_DOMAIN: 'macon170.com',
+        POSTMARK_SERVER_TOKEN: 'key-test',
         INVITE_FROM_EMAIL: 'volunteers@macon170.com',
         INVITE_FROM_NAME: 'Pack 170 Volunteers',
         INVITE_REPLY_TO: 'contact@macon170.com',
@@ -69,17 +68,17 @@ describe('CMS request guard', () => {
 
     expect(response.status).toBe(200)
     const [url, request] = send.mock.calls[0]!
-    expect(url).toBe('https://api.mailgun.net/v3/macon170.com/messages')
-    expect(request.headers.Authorization).toBe(`Basic ${btoa('api:key-test')}`)
-    const body = request.body as FormData
-    expect(body.get('from')).toBe('Pack 170 Volunteers <volunteers@macon170.com>')
-    expect(body.get('to')).toBe('volunteer@example.com')
-    expect(body.get('h:Reply-To')).toBe('contact@macon170.com')
-    expect(body.get('text')).toContain('token=secret-token')
-    expect(body.get('html')).toContain('token=secret-token')
-    for (const field of ['o:tracking', 'o:tracking-clicks', 'o:tracking-opens']) {
-      expect(body.get(field)).toBe('no')
-    }
+    expect(url).toBe('https://api.postmarkapp.com/email')
+    expect(request.headers['X-Postmark-Server-Token']).toBe('key-test')
+    const body = JSON.parse(request.body)
+    expect(body.From).toBe('Pack 170 Volunteers <volunteers@macon170.com>')
+    expect(body.To).toBe('volunteer@example.com')
+    expect(body.ReplyTo).toBe('contact@macon170.com')
+    expect(body.TextBody).toContain('token=secret-token')
+    expect(body.HtmlBody).toContain('token=secret-token')
+    expect(body.TrackOpens).toBe(false)
+    expect(body.TrackLinks).toBe('None')
+    expect(body.MessageStream).toBe('outbound')
     await expect(response.json()).resolves.toEqual({
       success: true,
       message: 'Invitation email sent. The setup link expires in seven days.',
@@ -99,8 +98,7 @@ describe('CMS request guard', () => {
       new Request('https://cms.example/admin/invite-user', { method: 'POST' }),
       {
         ...cmsEnv(),
-        MAILGUN_API_KEY: 'key-test',
-        MAILGUN_DOMAIN: 'macon170.com',
+        POSTMARK_SERVER_TOKEN: 'key-test',
         INVITE_FROM_EMAIL: 'volunteers@macon170.com',
       } as unknown as Bindings,
       executionContext,
@@ -118,10 +116,10 @@ describe('CMS request guard', () => {
     expect(JSON.stringify(log.mock.calls)).not.toContain('key-test')
   })
 
-  it.each(['MAILGUN_API_KEY', 'MAILGUN_DOMAIN', 'INVITE_FROM_EMAIL'])('rejects missing %s before account creation even with a legacy binding', async (missing) => {
+  it.each(['POSTMARK_SERVER_TOKEN', 'INVITE_FROM_EMAIL'])('rejects missing %s before account creation even with legacy Mailgun credentials', async (missing) => {
     const appFetch = vi.fn().mockResolvedValue(Response.json({ success: true }))
     const bindings: Record<string, unknown> = {
-      ...cmsEnv(), EMAIL: { send: vi.fn() }, MAILGUN_API_KEY: 'key-test',
+      ...cmsEnv(), POSTMARK_SERVER_TOKEN: 'postmark-test', MAILGUN_API_KEY: 'key-test',
       MAILGUN_DOMAIN: 'macon170.com', INVITE_FROM_EMAIL: 'volunteers@macon170.com',
     }
     delete bindings[missing]
@@ -168,6 +166,17 @@ describe('CMS request guard', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('Set-Cookie')).toContain('csrf_token=')
     await expect(response.text()).resolves.toContain("'X-CSRF-Token':CSRF")
+  })
+
+  it.each(['POSTMARK_API_TEST', ' POSTMARK_API_TEST ', '\tPOSTMARK_API_TEST\t'])('refuses production validation-only token %j before creating an invitation', async (token) => {
+    const appFetch = vi.fn().mockResolvedValue(Response.json({ success: true }))
+    const response = await createCmsRequestHandler(appFetch)(
+      new Request('https://cms.example/admin/invite-user', { method: 'POST' }),
+      { ...cmsEnv(), ENVIRONMENT: 'production', POSTMARK_SERVER_TOKEN: token, INVITE_FROM_EMAIL: 'volunteers@macon170.com' } as unknown as Bindings,
+      executionContext,
+    )
+    expect(response.status).toBe(503)
+    expect(appFetch).not.toHaveBeenCalled()
   })
 
   it('keeps invitation creation available when the pending list fails without leaking database errors', async () => {
