@@ -54,7 +54,7 @@ describe("signup email rendering", () => {
 });
 
 describe("signup email delivery", () => {
-  it("sends text and HTML through Postmark's transactional stream with tracking disabled", async () => {
+  it("sends text and HTML through Postmark with open tracking enabled and link tracking disabled", async () => {
     const send = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ErrorCode: 0, Message: "OK", MessageID: "message-test", To: "parent@example.com", SubmittedAt: "2026-10-07T22:00:00Z" })));
     await sendSignupLinkEmail(
       env,
@@ -76,7 +76,7 @@ describe("signup email delivery", () => {
     expect(body.ReplyTo).toBe("contact@macon170.com");
     expect(body.MessageStream).toBe("outbound");
     expect(body.TrackLinks).toBe("None");
-    expect(body.TrackOpens).toBe(false);
+    expect(body.TrackOpens).toBe(true);
   });
 
   it("omits Reply-To when SIGNUP_REPLY_TO is unset", async () => {

@@ -172,12 +172,14 @@ Delivery uses the same verified Postmark domain and Macon170.com Server API Toke
 (`POSTMARK_SERVER_TOKEN` Worker secret) as signup confirmations.
 The Postmark account must be approved for live sending, and `INVITE_FROM_EMAIL`
 must be configured; `INVITE_FROM_NAME` and
-`INVITE_REPLY_TO` control the sender name and replies. Link tracking is disabled
-for account-setup links. Messages request `TrackOpens: false`, but Postmark's
-server-level Open tracking setting overrides that flag when enabled. The
-Macon170.com server currently keeps Open tracking enabled by the owner's choice.
-To disable it for future messages, turn it off in that server's Settings → Tracking;
-this does not change previously sent messages. See
+`INVITE_REPLY_TO` control the sender name and replies. Messages explicitly enable
+open tracking with `TrackOpens: true` by the owner's choice, while link tracking
+remains disabled for account-setup links (`TrackLinks: "None"`). The same tracking
+policy applies to signup confirmations and resend messages. Open tracking does
+not depend on the server-level default being enabled. To disable it for future
+messages, change the app's flag to `false` and turn off Open tracking in the
+Postmark server's Settings → Tracking; the server setting overrides a `false`
+per-message flag when enabled. Neither change alters previously sent messages. See
 [Postmark's per-email tracking documentation](https://postmarkapp.com/developer/user-guide/tracking-opens/tracking-opens-per-email).
 Do not configure the SonicJS Resend plugin or place
 a provider API key in the CMS database. Messages explicitly use the transactional

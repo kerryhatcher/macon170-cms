@@ -45,7 +45,7 @@ export async function sendPostmarkEmail(
     HtmlBody: message.html,
     ...(message.replyTo ? { ReplyTo: message.replyTo } : {}),
     MessageStream: "outbound",
-    TrackOpens: false,
+    TrackOpens: true,
     TrackLinks: "None",
   });
   const controller = new AbortController();
