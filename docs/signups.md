@@ -195,8 +195,12 @@ Signup confirmation and resend messages use Postmark's HTTP API with text and
 HTML bodies in the transactional `outbound` stream. `POSTMARK_SERVER_TOKEN`
 is the Macon170.com Server API Token stored as a Worker secret; sender settings
 are non-secret Worker variables. Verify the sending domain in Postmark and
-enable live account sending before deploying. Each message explicitly
-disables open and click tracking and preserves the configured Reply-To address.
+enable live account sending before deploying. Each message disables link tracking
+and requests no open tracking while preserving the configured Reply-To address.
+Postmark's server-level Open tracking setting overrides `TrackOpens: false` when
+enabled. The owner chose to leave Open tracking enabled on the Macon170.com server;
+turn it off in Server Settings → Tracking if future messages must not be tracked.
+See [Postmark's per-email tracking documentation](https://postmarkapp.com/developer/user-guide/tracking-opens/tracking-opens-per-email).
 SonicJS volunteer invitations use the same Postmark transport and credentials,
 with their own `INVITE_FROM_EMAIL`, `INVITE_FROM_NAME`, and `INVITE_REPLY_TO` settings.
 
