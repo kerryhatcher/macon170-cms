@@ -192,7 +192,8 @@ or tokens. A null status means a network failure or an unconfirmed/malformed
 provider response. Success requires an HTTP success response with `ErrorCode: 0`
 and a nonempty `MessageID`. Check Postmark Activity to verify delivery; acceptance
 does not prove inbox placement. Sends are not automatically retried, because an
-ambiguous response could otherwise send duplicate setup links. Check Activity
+ambiguous response could otherwise send duplicate setup links. A 15-second
+deadline covers both the provider request and its response body. Check Activity
 before manually retrying an ambiguous failure.
 
 SonicJS 2.19.0 omits the required `users.username` column when creating an

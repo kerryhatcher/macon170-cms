@@ -48,9 +48,10 @@ export async function sendPostmarkEmail(
     TrackOpens: false,
     TrackLinks: "None",
   });
-  let response: Response;
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), 15_000);
   try {
-    response = await fetchImpl(
+    const response = await fetchImpl(
       "https://api.postmarkapp.com/email",
       {
         method: "POST",
@@ -63,26 +64,26 @@ export async function sendPostmarkEmail(
         // Workers supports only manual/follow. Reject redirects below rather
         // than forwarding the API credential to a redirected destination.
         redirect: "manual",
+        signal: controller.signal,
       },
     );
-  } catch {
+    if (!response.ok) throw new PostmarkDeliveryError(response.status);
+    // Keep the deadline active through the body, not just response headers.
+    const result: unknown = await response.json();
+    if (
+      typeof result !== "object" || result === null ||
+      !("ErrorCode" in result) || result.ErrorCode !== 0 ||
+      !("MessageID" in result) || typeof result.MessageID !== "string" ||
+      !result.MessageID.trim()
+    ) {
+      throw new PostmarkDeliveryError();
+    }
+  } catch (error) {
+    if (error instanceof PostmarkDeliveryError) throw error;
     // Provider/network errors can contain credentials or magic links.
+    // An abort is ambiguous: the provider may already have accepted the email.
     throw new PostmarkDeliveryError();
-  }
-  if (!response.ok) throw new PostmarkDeliveryError(response.status);
-
-  let result: unknown;
-  try {
-    result = await response.json();
-  } catch {
-    throw new PostmarkDeliveryError();
-  }
-  if (
-    typeof result !== "object" || result === null ||
-    !("ErrorCode" in result) || result.ErrorCode !== 0 ||
-    !("MessageID" in result) || typeof result.MessageID !== "string" ||
-    !result.MessageID.trim()
-  ) {
-    throw new PostmarkDeliveryError();
+  } finally {
+    clearTimeout(deadline);
   }
 }
