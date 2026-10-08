@@ -41,7 +41,7 @@ describe('CMS request guard', () => {
     expect(appFetch).not.toHaveBeenCalled()
   })
 
-  it('sends SonicJS invitation links through Postmark without exposing the token', async () => {
+  it('sends SonicJS invitation links with open tracking enabled without exposing the token', async () => {
     const send = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ErrorCode: 0, MessageID: 'message-test', Message: 'OK', To: 'volunteer@example.com', SubmittedAt: '2026-10-07T22:00:00Z' })))
     vi.stubGlobal('fetch', send)
     const appFetch = vi.fn().mockResolvedValue(Response.json({
@@ -76,7 +76,7 @@ describe('CMS request guard', () => {
     expect(body.ReplyTo).toBe('contact@macon170.com')
     expect(body.TextBody).toContain('token=secret-token')
     expect(body.HtmlBody).toContain('token=secret-token')
-    expect(body.TrackOpens).toBe(false)
+    expect(body.TrackOpens).toBe(true)
     expect(body.TrackLinks).toBe('None')
     expect(body.MessageStream).toBe('outbound')
     await expect(response.json()).resolves.toEqual({

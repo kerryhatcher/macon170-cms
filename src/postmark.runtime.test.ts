@@ -36,7 +36,7 @@ describe("Postmark transport in the Cloudflare Worker runtime", () => {
       expect(body.To).toBe("volunteer@example.test");
       expect(body.MessageStream).toBe("outbound");
       expect(body.TrackLinks).toBe("None");
-      expect(body.TrackOpens).toBe(false);
+      expect(body.TrackOpens).toBe(true);
       return Response.json({ ErrorCode: 0, Message: "OK", MessageID: "message-test", To: "volunteer@example.test", SubmittedAt: "2026-10-07T22:00:00Z" }, { status, headers: { Location: "https://redirect.example.test/" } });
     });
     const worker = new Miniflare({
