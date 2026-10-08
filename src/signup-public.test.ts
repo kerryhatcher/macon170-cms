@@ -80,8 +80,7 @@ function baseEnv(overrides: Record<string, unknown> = {}) {
     TURNSTILE_SECRET: "1x0000000000000000000000000000000AA",
     TURNSTILE_EXPECTED_ACTION: "turnstile-spin-v2",
     TURNSTILE_EXPECTED_HOSTNAMES: "www.macon170.com",
-    MAILGUN_API_KEY: "key-test",
-    MAILGUN_DOMAIN: "macon170.com",
+    POSTMARK_SERVER_TOKEN: "key-test",
     SIGNUP_FROM_EMAIL: "volunteers@macon170.com",
     SIGNUP_RATE_LIMITER: { limit: async () => ({ success: true }) },
     DB: stubDb(),
@@ -115,9 +114,11 @@ function submit(body: Record<string, unknown>, origin = publicOrigin) {
 // out the same already-consumed Response on a second call would make later
 // tests fail on an unrelated "body already read" error instead of the
 // behavior they are actually asserting on.
-const turnstileOk = vi.fn(() =>
+const turnstileOk = vi.fn((url?: string | URL | Request) =>
   Promise.resolve(
-    new Response(
+    String(url) === "https://api.postmarkapp.com/email"
+      ? Response.json({ ErrorCode: 0, MessageID: "message-test", Message: "OK", To: "parent@example.com", SubmittedAt: "2026-10-07T22:00:00Z" })
+      : new Response(
       JSON.stringify({
         success: true,
         action: "turnstile-spin-v2",
@@ -447,7 +448,7 @@ describe("public signup routing", () => {
     const provider = vi.fn((url: string | URL | Request, _init?: RequestInit) =>
       String(url).includes("challenges.cloudflare.com")
         ? turnstileOk()
-        : Promise.resolve(new Response("accepted", { status: 200 })),
+        : Promise.resolve(Response.json({ ErrorCode: 0, MessageID: "message-test", Message: "OK", To: "parent@example.com", SubmittedAt: "2026-10-07T22:00:00Z" })),
     );
     const response = await handlePublicSignupRequest(
       submit(validSubmission),
@@ -459,8 +460,8 @@ describe("public signup routing", () => {
       status: "emailed",
     });
     expect(provider).toHaveBeenCalledTimes(2);
-    const mailgunBody = provider.mock.calls[1]?.[1]?.body as FormData;
-    expect(mailgunBody.get("to")).toBe("parent@example.com");
+    const message = JSON.parse(String(provider.mock.calls[1]?.[1]?.body));
+    expect(message.To).toBe("parent@example.com");
   });
 
   it("resends the link for an email that already responded, without a second row", async () => {

@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 // Execute the actual transport in workerd; only the external provider is stubbed.
 const transport = transpileModule(
-  readFileSync(new URL("./mailgun.ts", import.meta.url), "utf8"),
+  readFileSync(new URL("./postmark.ts", import.meta.url), "utf8"),
   { compilerOptions: { target: ScriptTarget.ES2022, module: ModuleKind.ESNext } },
 ).outputText;
 
@@ -14,8 +14,8 @@ const script = `${transport}
 export default {
   async fetch() {
     try {
-      await sendMailgunEmail(
-        { MAILGUN_API_KEY: "key-runtime-test", MAILGUN_DOMAIN: "macon170.com" },
+      await sendPostmarkEmail(
+        { POSTMARK_SERVER_TOKEN: "key-runtime-test" },
         { from: "volunteers@macon170.com", to: "volunteer@example.test",
           subject: "Runtime test", text: "Test setup link", html: "Test setup link" },
       );
@@ -26,16 +26,18 @@ export default {
   },
 };`;
 
-describe("Mailgun transport in the Cloudflare Worker runtime", () => {
+describe("Postmark transport in the Cloudflare Worker runtime", () => {
   it.each([200, 302, 403])("handles provider status %s without following redirects", async (status) => {
     const outbound = vi.fn(async (request: Request) => {
-      expect(request.url).toBe("https://api.mailgun.net/v3/macon170.com/messages");
+      expect(request.url).toBe("https://api.postmarkapp.com/email");
       expect(request.method).toBe("POST");
-      expect(request.headers.get("Authorization")).toBe(`Basic ${btoa("api:key-runtime-test")}`);
-      const body = await request.formData();
-      expect(body.get("to")).toBe("volunteer@example.test");
-      expect(body.get("o:tracking")).toBe("no");
-      return new Response(null, { status, headers: { Location: "https://redirect.example.test/" } });
+      expect(request.headers.get("X-Postmark-Server-Token")).toBe("key-runtime-test");
+      const body = await request.json() as Record<string, unknown>;
+      expect(body.To).toBe("volunteer@example.test");
+      expect(body.MessageStream).toBe("outbound");
+      expect(body.TrackLinks).toBe("None");
+      expect(body.TrackOpens).toBe(false);
+      return Response.json({ ErrorCode: 0, Message: "OK", MessageID: "message-test", To: "volunteer@example.test", SubmittedAt: "2026-10-07T22:00:00Z" }, { status, headers: { Location: "https://redirect.example.test/" } });
     });
     const worker = new Miniflare({
       modules: true,
@@ -49,7 +51,7 @@ describe("Mailgun transport in the Cloudflare Worker runtime", () => {
       expect(response.status).toBe(status === 200 ? 200 : 502);
       await expect(response.json()).resolves.toEqual(status === 200
         ? { success: true }
-        : { error: "MailgunDeliveryError", status });
+        : { error: "PostmarkDeliveryError", status });
       expect(outbound).toHaveBeenCalledOnce();
     } finally {
       await worker.dispose();

@@ -9,8 +9,7 @@ import type { SignupBindings } from "./signups";
 
 const env = {
   PUBLIC_SITE_ORIGIN: "https://www.macon170.com",
-  MAILGUN_API_KEY: "key-test",
-  MAILGUN_DOMAIN: "macon170.com",
+  POSTMARK_SERVER_TOKEN: "key-test",
   SIGNUP_FROM_EMAIL: "volunteers@macon170.com",
   SIGNUP_FROM_NAME: "Pack 170 Volunteers",
   SIGNUP_REPLY_TO: "contact@macon170.com",
@@ -55,8 +54,8 @@ describe("signup email rendering", () => {
 });
 
 describe("signup email delivery", () => {
-  it("sends text and HTML through Mailgun with tracking disabled", async () => {
-    const send = vi.fn().mockResolvedValue(new Response("accepted", { status: 200 }));
+  it("sends text and HTML through Postmark's transactional stream with tracking disabled", async () => {
+    const send = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ErrorCode: 0, Message: "OK", MessageID: "message-test", To: "parent@example.com", SubmittedAt: "2026-10-07T22:00:00Z" })));
     await sendSignupLinkEmail(
       env,
       { email: "parent@example.com", name: "Hatcher" },
@@ -65,22 +64,23 @@ describe("signup email delivery", () => {
     );
     expect(send).toHaveBeenCalledOnce();
     const [url, request] = send.mock.calls[0];
-    expect(url).toBe("https://api.mailgun.net/v3/macon170.com/messages");
-    expect(request.headers.Authorization).toBe(`Basic ${btoa("api:key-test")}`);
+    expect(url).toBe("https://api.postmarkapp.com/email");
+    expect(request.headers["X-Postmark-Server-Token"]).toBe("key-test");
+    expect(request.headers["Content-Type"]).toBe("application/json");
     expect(request.redirect).toBe("manual");
-    const body = request.body as FormData;
-    expect(body.get("from")).toBe("Pack 170 Volunteers <volunteers@macon170.com>");
-    expect(body.get("to")).toBe("parent@example.com");
-    expect(body.get("text")).toContain(options.linkUrl);
-    expect(body.get("html")).toContain(options.linkUrl);
-    expect(body.get("h:Reply-To")).toBe("contact@macon170.com");
-    expect(body.get("o:tracking")).toBe("no");
-    expect(body.get("o:tracking-clicks")).toBe("no");
-    expect(body.get("o:tracking-opens")).toBe("no");
+    const body = JSON.parse(request.body);
+    expect(body.From).toBe("Pack 170 Volunteers <volunteers@macon170.com>");
+    expect(body.To).toBe("parent@example.com");
+    expect(body.TextBody).toContain(options.linkUrl);
+    expect(body.HtmlBody).toContain(options.linkUrl);
+    expect(body.ReplyTo).toBe("contact@macon170.com");
+    expect(body.MessageStream).toBe("outbound");
+    expect(body.TrackLinks).toBe("None");
+    expect(body.TrackOpens).toBe(false);
   });
 
   it("omits Reply-To when SIGNUP_REPLY_TO is unset", async () => {
-    const send = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    const send = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ErrorCode: 0, Message: "OK", MessageID: "message-test", To: "parent@example.com", SubmittedAt: "2026-10-07T22:00:00Z" })));
     const { SIGNUP_REPLY_TO, ...withoutReplyTo } = env as unknown as Record<
       string,
       unknown
@@ -91,11 +91,11 @@ describe("signup email delivery", () => {
       options,
       send,
     );
-    expect((send.mock.calls[0][1].body as FormData).has("h:Reply-To")).toBe(false);
+    expect(JSON.parse(send.mock.calls[0][1].body)).not.toHaveProperty("ReplyTo");
   });
 
-  it("throws when the Mailgun key is missing", async () => {
-    const { MAILGUN_API_KEY, ...withoutKey } = env as unknown as Record<
+  it("throws when the Postmark server token is missing", async () => {
+    const { POSTMARK_SERVER_TOKEN, ...withoutKey } = env as unknown as Record<
       string,
       unknown
     >;
@@ -105,10 +105,10 @@ describe("signup email delivery", () => {
         { email: "parent@example.com", name: "Hatcher" },
         options,
       ),
-    ).rejects.toThrow("Mailgun");
+    ).rejects.toThrow("Postmark");
   });
 
-  it("throws when Mailgun rejects the message", async () => {
+  it("throws when Postmark rejects the message", async () => {
     await expect(
       sendSignupLinkEmail(
         env,
@@ -122,6 +122,31 @@ describe("signup email delivery", () => {
   it("sanitizes network failures instead of exposing credentials or message content", async () => {
     await expect(sendSignupLinkEmail(env, { email: "parent@example.com", name: "Parent" }, options,
       vi.fn().mockRejectedValue(new Error("key-test token=abc parent@example.com")),
-    )).rejects.toThrow(/^Mailgun request failed\.$/);
+    )).rejects.toThrow(/^Postmark request failed\.$/);
+  });
+
+  it.each([
+    { ErrorCode: 10, Message: "key-test token=abc" },
+    { ErrorCode: 0, MessageID: "" },
+    { MessageID: "message-test" },
+    null,
+  ])("rejects an unconfirmed provider result without exposing its body: %j", async (result) => {
+    const send = vi.fn(() => Promise.resolve(Response.json(result)));
+    await expect(sendSignupLinkEmail(env, { email: "parent@example.com", name: "Parent" }, options, send)).rejects.toThrow(/^Postmark request failed\.$/);
+    expect(send).toHaveBeenCalledOnce();
+  });
+
+  it("rejects malformed JSON even with HTTP success", async () => {
+    await expect(sendSignupLinkEmail(env, { email: "parent@example.com", name: "Parent" }, options,
+      vi.fn(() => Promise.resolve(new Response("key-test token=abc"))),
+    )).rejects.toThrow(/^Postmark request failed\.$/);
+  });
+
+  it.each(["POSTMARK_API_TEST", " POSTMARK_API_TEST ", "\tPOSTMARK_API_TEST\t"])("refuses the no-delivery test token %j in production before contacting Postmark", async (token) => {
+    const send = vi.fn(() => Promise.resolve(Response.json({ ErrorCode: 0, MessageID: "test-only" })));
+    await expect(sendSignupLinkEmail({ ...env, ENVIRONMENT: "production", POSTMARK_SERVER_TOKEN: token },
+      { email: "parent@example.com", name: "Parent" }, options, send,
+    )).rejects.toThrow("not configured");
+    expect(send).not.toHaveBeenCalled();
   });
 });

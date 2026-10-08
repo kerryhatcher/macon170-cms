@@ -1,5 +1,5 @@
 import type { Bindings } from "@sonicjs-cms/core";
-import type { MailgunBindings } from "./mailgun";
+import type { PostmarkBindings } from "./postmark";
 
 export const SIGNUP_PERMISSION = "signups.manage";
 export const SIGNUP_VERSION = "v1";
@@ -12,7 +12,7 @@ export type SignupFormType = "rsvp" | "items";
 export type SignupFormState = "draft" | "open" | "closed";
 export type SignupResponseStatus = "unconfirmed" | "confirmed";
 
-export type SignupBindings = Bindings & MailgunBindings & {
+export type SignupBindings = Bindings & PostmarkBindings & {
   APP_VERSION?: string;
   ENVIRONMENT?: string;
   PUBLIC_SITE_ORIGIN?: string;

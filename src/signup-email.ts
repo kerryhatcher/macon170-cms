@@ -1,5 +1,5 @@
 import type { SignupBindings } from "./signups";
-import { sendMailgunEmail } from "./mailgun";
+import { isPostmarkConfigured, sendPostmarkEmail } from "./postmark";
 
 export type SignupEmailOptions = {
   name: string;
@@ -87,12 +87,12 @@ export async function sendSignupLinkEmail(
   options: SignupEmailOptions,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
-  if (!env.MAILGUN_API_KEY || !env.MAILGUN_DOMAIN || !env.SIGNUP_FROM_EMAIL) {
-    throw new Error("Mailgun signup email is not configured.");
+  if (!isPostmarkConfigured(env) || !env.SIGNUP_FROM_EMAIL) {
+    throw new Error("Postmark signup email is not configured.");
   }
 
   const rendered = renderSignupEmail(options);
-  await sendMailgunEmail(env, {
+  await sendPostmarkEmail(env, {
     from: `${env.SIGNUP_FROM_NAME ?? "Pack 170 Volunteers"} <${env.SIGNUP_FROM_EMAIL}>`,
     to: recipient.email,
     ...rendered,

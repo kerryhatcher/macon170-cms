@@ -26,10 +26,11 @@ import { renderDashPage } from "./dash-page";
 import { renderLeadershipPage } from "./leadership-page";
 import { renderInvitePage, type PendingInvitation } from "./invite-page";
 import {
-  MailgunDeliveryError,
-  sendMailgunEmail,
-  type MailgunBindings,
-} from "./mailgun";
+  PostmarkDeliveryError,
+  isPostmarkConfigured,
+  sendPostmarkEmail,
+  type PostmarkBindings,
+} from "./postmark";
 import {
   CONTACT_API_BASE,
   CONTACT_QUEUE_PATH,
@@ -67,7 +68,7 @@ type AuthenticatedUser = {
   role: string;
 };
 
-type InviteEmailBindings = CalendarBindings & MailgunBindings & {
+type InviteEmailBindings = CalendarBindings & PostmarkBindings & {
   INVITE_FROM_EMAIL?: string;
   INVITE_FROM_NAME?: string;
   INVITE_REPLY_TO?: string;
@@ -409,8 +410,7 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
     if (isInvitationDeliveryRequest(request, pathname)) {
       const inviteEnv = env as InviteEmailBindings;
       if (
-        !inviteEnv.MAILGUN_API_KEY ||
-        !inviteEnv.MAILGUN_DOMAIN ||
+        !isPostmarkConfigured(inviteEnv) ||
         !inviteEnv.INVITE_FROM_EMAIL
       ) {
         return errorResponse(
@@ -481,7 +481,7 @@ async function deliverInvitationEmail(
   }
 
   try {
-    await sendMailgunEmail(env, {
+    await sendPostmarkEmail(env, {
       from: `${env.INVITE_FROM_NAME ?? "Pack 170 Volunteers"} <${env.INVITE_FROM_EMAIL!}>`,
       to: recipient.email,
       subject: "Set up your Pack 170 CMS account",
@@ -492,8 +492,8 @@ async function deliverInvitationEmail(
   } catch (error) {
     console.error(JSON.stringify({
       event: "invite_delivery_failed",
-      provider: "mailgun",
-      status: error instanceof MailgunDeliveryError ? error.status ?? null : null,
+      provider: "postmark",
+      status: error instanceof PostmarkDeliveryError ? error.status ?? null : null,
     }));
     return invitationResponse(
       {
