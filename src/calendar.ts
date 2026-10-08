@@ -8,10 +8,7 @@ export type CalendarPublicationState = "draft" | "published" | "archived";
 export type CalendarEventStatus = "scheduled" | "tentative" | "cancelled";
 export type CalendarCategory = "pack" | "den" | "family";
 export type CalendarMilestone =
-  | "lego-derby"
-  | "fall-camp"
-  | "pinewood-derby"
-  | "blue-gold";
+  "lego-derby" | "fall-camp" | "pinewood-derby" | "blue-gold";
 
 export type CalendarEvent = {
   id: string;
@@ -25,6 +22,7 @@ export type CalendarEvent = {
   description: string;
   startsAt: string;
   endsAt: string | null;
+  allDay: boolean;
   timezone: typeof CALENDAR_TIMEZONE;
   locationName: string | null;
   address: string | null;
@@ -66,6 +64,7 @@ type CalendarRow = {
   description: string;
   starts_at: string;
   ends_at: string | null;
+  all_day: number;
   timezone: typeof CALENDAR_TIMEZONE;
   location_name: string | null;
   address: string | null;
@@ -135,11 +134,31 @@ export function validateCalendarInput(
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
     throw new Error("Invalid slug");
   }
-  const startsAt = instant("startsAt");
-  const endsAt =
+  if (input.allDay !== undefined && typeof input.allDay !== "boolean") {
+    throw new Error("Invalid allDay");
+  }
+  const allDay = input.allDay === true;
+  let startsAt = instant("startsAt");
+  let endsAt =
     input.endsAt === null || input.endsAt === undefined || input.endsAt === ""
       ? null
       : instant("endsAt");
+  if (allDay) {
+    const first = packDate(startsAt);
+    const last = packDate(endsAt || startsAt);
+    if (last < first)
+      throw new Error("End date must be on or after the start date");
+    startsAt = packMidnight(first).toISOString();
+    const next = new Date(
+      `${last.slice(0, 4)}-${last.slice(4, 6)}-${last.slice(6, 8)}T12:00:00Z`,
+    );
+    next.setUTCDate(next.getUTCDate() + 1);
+    endsAt = new Date(
+      packMidnight(
+        next.toISOString().slice(0, 10).replaceAll("-", ""),
+      ).getTime() - 1,
+    ).toISOString();
+  }
   if (endsAt && Date.parse(endsAt) <= Date.parse(startsAt)) {
     throw new Error("End date must be after the start date");
   }
@@ -178,6 +197,7 @@ export function validateCalendarInput(
     eventStatus,
     startsAt,
     endsAt,
+    allDay,
     timezone: CALENDAR_TIMEZONE,
     locationName: optional("locationName", 200),
     address: optional("address", 300),
@@ -202,6 +222,7 @@ export function rowToEvent(row: CalendarRow): CalendarEvent {
     description: row.description,
     startsAt: row.starts_at,
     endsAt: row.ends_at,
+    allDay: row.all_day === 1,
     timezone: row.timezone,
     locationName: row.location_name,
     address: row.address,
@@ -223,7 +244,7 @@ const selectColumns = `
   id, revision, slug, publication_state, event_status, category, title,
   summary, description, starts_at, ends_at, timezone, location_name, address,
   audience, what_to_bring, cost, registration_url, milestone, created_at,
-  updated_at, published_at
+  updated_at, published_at, all_day
 `;
 
 export async function listCalendarEvents(
@@ -251,9 +272,7 @@ export async function getCalendarEvent(
   publishedOnly: boolean,
 ): Promise<CalendarEvent | null> {
   const field = publishedOnly ? "slug" : "id";
-  const published = publishedOnly
-    ? " AND publication_state = 'published'"
-    : "";
+  const published = publishedOnly ? " AND publication_state = 'published'" : "";
   const row = await env.DB.prepare(
     `SELECT ${selectColumns} FROM calendar_events WHERE ${field} = ?${published} LIMIT 1`,
   )
@@ -286,8 +305,8 @@ export async function createCalendarEvent(
           id, revision, slug, publication_state, event_status, category, title,
           summary, description, starts_at, ends_at, timezone, location_name,
           address, audience, what_to_bring, cost, registration_url, milestone,
-          created_at, updated_at, published_at
-        ) VALUES (?, 0, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+          created_at, updated_at, published_at, all_day
+        ) VALUES (?, 0, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
       ).bind(
         id,
         input.slug,
@@ -308,6 +327,7 @@ export async function createCalendarEvent(
         input.milestone,
         now,
         now,
+        input.allDay ? 1 : 0,
       ),
       env.DB.prepare(
         `INSERT INTO calendar_event_history
@@ -388,9 +408,11 @@ async function mutateCalendarEvent(
       ...existing,
     });
   const publishedAt =
-    state === "published" ? now : existing.publishedAt
-      ? Date.parse(existing.publishedAt)
-      : null;
+    state === "published"
+      ? now
+      : existing.publishedAt
+        ? Date.parse(existing.publishedAt)
+        : null;
   const snapshot = JSON.stringify({
     ...nextInput,
     id,
@@ -410,7 +432,7 @@ async function mutateCalendarEvent(
           category = ?, title = ?, summary = ?, description = ?, starts_at = ?,
           ends_at = ?, timezone = ?, location_name = ?, address = ?, audience = ?,
           what_to_bring = ?, cost = ?, registration_url = ?, milestone = ?,
-          updated_at = ?, published_at = ?
+          updated_at = ?, published_at = ?, all_day = ?
          WHERE id = ? AND revision = ?`,
       ).bind(
         revision,
@@ -433,6 +455,7 @@ async function mutateCalendarEvent(
         nextInput.milestone,
         now,
         publishedAt,
+        nextInput.allDay ? 1 : 0,
         id,
         expectedRevision,
       ),
@@ -510,9 +533,20 @@ export function renderCalendarIcs(events: CalendarEvent[]): string {
       `UID:${escapeIcs(event.id)}@macon170.com`,
       `SEQUENCE:${event.revision}`,
       `DTSTAMP:${toIcsDate(event.updatedAt)}`,
-      `DTSTART:${toIcsDate(event.startsAt)}`,
+      event.allDay
+        ? `DTSTART;VALUE=DATE:${packDate(event.startsAt)}`
+        : `DTSTART:${toIcsDate(event.startsAt)}`,
     );
-    if (event.endsAt) lines.push(`DTEND:${toIcsDate(event.endsAt)}`);
+    if (event.allDay) {
+      const lastDate = packDate(event.endsAt || event.startsAt);
+      const nextDate = new Date(
+        `${lastDate.slice(0, 4)}-${lastDate.slice(4, 6)}-${lastDate.slice(6, 8)}T12:00:00Z`,
+      );
+      nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+      lines.push(
+        `DTEND;VALUE=DATE:${nextDate.toISOString().slice(0, 10).replaceAll("-", "")}`,
+      );
+    } else if (event.endsAt) lines.push(`DTEND:${toIcsDate(event.endsAt)}`);
     lines.push(
       `SUMMARY:${escapeIcs(event.title)}`,
       `DESCRIPTION:${escapeIcs(event.description)}`,
@@ -530,6 +564,42 @@ export function renderCalendarIcs(events: CalendarEvent[]): string {
   }
   lines.push("END:VCALENDAR");
   return `${lines.flatMap(foldIcsLine).join("\r\n")}\r\n`;
+}
+
+// Resolve local midnight in the pack timezone, including daylight-saving changes.
+function packMidnight(day: string): Date {
+  const target = Date.UTC(
+    Number(day.slice(0, 4)),
+    Number(day.slice(4, 6)) - 1,
+    Number(day.slice(6, 8)),
+  );
+  let instant = target;
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: CALENDAR_TIMEZONE,
+    timeZoneName: "shortOffset",
+  });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const zone = formatter
+      .formatToParts(new Date(instant))
+      .find((part) => part.type === "timeZoneName")!.value;
+    const hours = Number(zone.replace("GMT", ""));
+    const next = target - hours * 3600000;
+    if (next === instant) break;
+    instant = next;
+  }
+  return new Date(instant);
+}
+
+function packDate(value: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: CALENDAR_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+  return ["year", "month", "day"]
+    .map((type) => parts.find((part) => part.type === type)!.value)
+    .join("");
 }
 
 function escapeIcs(value: string): string {
@@ -555,10 +625,7 @@ export function foldIcsLine(line: string): string[] {
   let segment = "";
   let maxBytes = 75;
   for (const character of line) {
-    if (
-      segment &&
-      encoder.encode(segment + character).byteLength > maxBytes
-    ) {
+    if (segment && encoder.encode(segment + character).byteLength > maxBytes) {
       result.push(result.length === 0 ? segment : ` ${segment}`);
       segment = character;
       maxBytes = 74;
