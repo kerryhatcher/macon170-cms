@@ -1,3 +1,4 @@
+import { emailContent, emailDocument } from "./broadcast-email";
 import {
   BroadcastError,
   emailAddress,
@@ -38,6 +39,39 @@ export async function handleBroadcastPublic(
       path = url.pathname;
     if (!["GET", "POST"].includes(request.method))
       return json({ message: "Method not allowed." }, 405);
+    if (path.startsWith("/email/messages/")) {
+      if (request.method !== "GET")
+        return json({ message: "Method not allowed." }, 405);
+      const id = path.slice("/email/messages/".length);
+      if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          id,
+        )
+      )
+        return json({ message: "Email not found." }, 404);
+      const message = await env.DB.prepare(
+        "SELECT subject,body,body_html FROM broadcasts b WHERE id=? AND state!='draft' AND EXISTS(SELECT 1 FROM broadcast_recipients r WHERE r.broadcast_id=b.id AND r.message_id IS NOT NULL)",
+      )
+        .bind(id)
+        .first<{ subject: string; body: string; body_html: string }>();
+      if (!message) return json({ message: "Email not found." }, 404);
+      const content = emailContent(
+        message.subject,
+        message.body,
+        message.body_html,
+      );
+      return new Response(emailDocument(content.subject, content.html), {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Robots-Tag": "noindex, nofollow",
+          "Referrer-Policy": "no-referrer",
+          "X-Content-Type-Options": "nosniff",
+          "Content-Security-Policy":
+            "default-src 'none'; img-src https:; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'",
+        },
+      });
+    }
     const oneClick = path.startsWith("/email/unsubscribe/");
     if (
       request.method === "POST" &&

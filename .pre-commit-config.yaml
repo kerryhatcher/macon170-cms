@@ -33,5 +33,5 @@ repos:
     hooks:
       - id: codespell
         # Wrangler's generated runtime declarations contain upstream spelling
-        # errors, and lockfile integrity hashes are not prose.
-        exclude: '^(src/worker-configuration\.d\.ts|bun\.lock)$'
+        # errors; lockfile hashes and vendored editor assets are not project prose.
+        exclude: '^(src/worker-configuration\.d\.ts|bun\.lock|public/email-editor/.*)$'

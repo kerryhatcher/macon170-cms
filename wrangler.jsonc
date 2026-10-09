@@ -5,6 +5,7 @@
   "compatibility_date": "2026-07-29",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
+  "assets": { "directory": "./public" },
   "routes": [{ "pattern": "cms.macon170.com", "custom_domain": true }],
   "d1_databases": [
     {

@@ -131,6 +131,9 @@ beforeEach(() => {
   );
   sqlite.exec(migration);
   sqlite.exec(migration);
+  sqlite.exec(
+    readFileSync("migrations/custom/0008_broadcast_html.sql", "utf8"),
+  );
   sqlite.exec(`INSERT INTO broadcast_lists VALUES('list1','Pack news','pack-news',0),('list2','Den news','den-news',0);
  INSERT INTO broadcast_contacts VALUES('contact1','parent@example.test','Parent','',0);
  INSERT INTO broadcast_memberships VALUES('contact1','list1','active'),('contact1','list2','active');`);
@@ -578,4 +581,83 @@ it("list details exclude removed members without removing contacts or their othe
     contacts: [{ id: "contact1" }],
   });
   expect(query("SELECT * FROM broadcast_contacts")).toHaveLength(1);
+});
+it("saves sanitized HTML drafts and previews without sending or publishing", async () => {
+  const content = {
+    subject: "Hello {{name}}",
+    html: "<h2>Pack news</h2><p>Hi <strong>{{name}}</strong>!</p><script>alert(1)</script>",
+    listId: "list1",
+  };
+  const preview = (await (await admin("/preview", content)).json()) as {
+    html: string;
+  };
+  expect(preview.html).toContain("<strong>friend</strong>");
+  expect(preview.html).not.toContain("<script>");
+  expect(query("SELECT * FROM broadcasts")).toHaveLength(0);
+  expect(send).not.toHaveBeenCalled();
+  const saved = (await (await admin("/drafts", content)).json()) as {
+    id: string;
+  };
+  const row = query("SELECT * FROM broadcasts")[0]!;
+  expect(row.body_html).toContain("<h2>Pack news</h2>");
+  expect(row.body_html).not.toContain("<script>");
+  expect(row.body).toContain("Pack news");
+  expect(
+    (
+      await handleBroadcastPublic(
+        new Request("https://cms.example/email/messages/" + saved.id),
+        env,
+      )
+    ).status,
+  ).toBe(404);
+  expect(
+    (
+      await admin("/drafts", {
+        ...content,
+        id: saved.id,
+        html: "<p>Updated</p>",
+      })
+    ).status,
+  ).toBe(200);
+  expect(query("SELECT * FROM broadcasts")).toHaveLength(1);
+});
+it("publishes a UUID web copy only after provider acceptance, without recipient data or management links", async () => {
+  const saved = (await (
+    await admin("/drafts", {
+      subject: "Hello {{name}}",
+      html: "<p>Welcome <strong>{{name}}</strong>.</p>",
+      listId: "list1",
+    })
+  ).json()) as { id: string };
+  expect(saved.id).toMatch(/^[0-9a-f-]{36}$/);
+  await admin("/send", { id: saved.id });
+  const url = "https://cms.example/email/messages/" + saved.id;
+  expect((await handleBroadcastPublic(new Request(url), env)).status).toBe(404);
+  await runBroadcastDelivery(env);
+  const sent = JSON.parse(send.mock.calls[0]![1].body);
+  expect(sent.HtmlBody).toContain("<strong>Parent</strong>");
+  expect(sent.Subject).toBe("Hello Parent");
+  expect(sent.HtmlBody).toContain("/email/messages/" + saved.id);
+  expect(sent.TextBody).toContain("Welcome Parent.");
+  const publicResponse = await handleBroadcastPublic(new Request(url), env);
+  expect(publicResponse.status).toBe(200);
+  const html = await publicResponse.text();
+  expect(html).toContain("<strong>friend</strong>");
+  expect(html).not.toContain("Parent");
+  expect(html).not.toContain("parent@example.test");
+  expect(html).not.toContain("/email/preferences/");
+  expect(html).not.toContain("/email/unsubscribe/");
+  expect(publicResponse.headers.get("Content-Security-Policy")).toContain(
+    "default-src 'none'",
+  );
+  expect(
+    (
+      await admin("/drafts", {
+        id: saved.id,
+        listId: "list1",
+        subject: "Changed",
+        html: "<p>Changed</p>",
+      })
+    ).status,
+  ).toBe(400);
 });
