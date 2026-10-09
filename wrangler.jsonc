@@ -38,10 +38,14 @@
     "SIGNUP_FROM_EMAIL": "volunteers@macon170.com",
     "SIGNUP_FROM_NAME": "Pack 170 Volunteers",
     "SIGNUP_REPLY_TO": "contact@macon170.com",
+    "BROADCAST_FROM_EMAIL": "volunteers@macon170.com",
+    "BROADCAST_STREAM": "pack-broadcasts",
+    "BROADCAST_ORIGIN": "https://cms.macon170.com",
+    "BROADCAST_UNSUBSCRIBE_MODE": "postmark",
     "TURNSTILE_EXPECTED_ACTION": "turnstile-spin-v2",
     "TURNSTILE_EXPECTED_HOSTNAMES": "macon170.com,www.macon170.com"
   },
-  // TURNSTILE_SECRET, POSTMARK_SERVER_TOKEN, and the rollout
+  // TURNSTILE_SECRET, POSTMARK_SERVER_TOKEN, BROADCAST_WEBHOOK_SECRET, and the rollout
   // toggle SIGNUP_REQUIRE_PHONE are Worker secrets.
   "triggers": { "crons": ["17 3 * * *", "* * * * *"] },
   "observability": {
