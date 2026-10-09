@@ -74,6 +74,7 @@ ${renderAdminHeader("calendar")}
             <label>URL slug<input name="slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" maxlength="80"></label>
             <label>Category<select name="category"><option value="pack">Pack</option><option value="den">Den</option><option value="family">Family</option></select></label>
             <label>Event status<select name="eventStatus"><option value="scheduled">Scheduled</option><option value="tentative">Tentative</option><option value="cancelled">Cancelled</option></select></label>
+            <label class="wide"><span><input name="allDay" type="checkbox" style="width:auto"> All-day</span><small>Show dates only on the website and calendar subscription. The end date is included.</small></label>
             <label>Starts at<input name="startsAt" type="datetime-local" required></label>
             <label>Ends at<input name="endsAt" type="datetime-local"></label>
             <label class="wide">Summary<textarea name="summary" required minlength="10" maxlength="500"></textarea></label>
@@ -126,14 +127,32 @@ ${renderAdminHeader("calendar")}
       const date = new Date(iso);
       return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     };
-    const utcValue = (value) => value ? new Date(value).toISOString() : null;
+    const allDayField = form.elements.namedItem('allDay');
+    const dateFields = ['startsAt', 'endsAt'].map((key) => form.elements.namedItem(key));
+    const packDay = (iso) => {
+      if (!iso) return '';
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(iso));
+      return ['year', 'month', 'day'].map((type) => parts.find((part) => part.type === type).value).join('-');
+    };
+    const syncDateFields = () => {
+      for (const field of dateFields) {
+        const value = field.value;
+        const wasDate = field.type === 'date';
+        field.type = allDayField.checked ? 'date' : 'datetime-local';
+        field.value = allDayField.checked
+          ? (wasDate ? value : packDay(value ? new Date(value).toISOString() : null))
+          : (wasDate && value ? value + 'T12:00' : value);
+      }
+    };
+    allDayField.addEventListener('change', syncDateFields);
+    const utcValue = (value) => value ? new Date(allDayField.checked ? value + 'T12:00:00Z' : value).toISOString() : null;
     const values = () => Object.fromEntries(new FormData(form).entries());
     const payload = () => {
       const data = values();
       return {
         title: data.title, slug: data.slug, category: data.category,
         eventStatus: data.eventStatus, startsAt: utcValue(data.startsAt),
-        endsAt: utcValue(data.endsAt), timezone: 'America/New_York',
+        endsAt: utcValue(data.endsAt), allDay: form.elements.namedItem('allDay').checked, timezone: 'America/New_York',
         summary: data.summary, description: data.description,
         locationName: data.locationName || null, address: data.address || null,
         audience: data.audience, whatToBring: data.whatToBring || null,
@@ -145,9 +164,12 @@ ${renderAdminHeader("calendar")}
       selected = event;
       heading.textContent = event ? 'Edit event' : 'New event';
       form.reset();
+      allDayField.checked = event?.allDay === true;
+      for (const field of dateFields) field.type = allDayField.checked ? 'date' : 'datetime-local';
       for (const [key, value] of Object.entries(event || {})) {
         const field = form.elements.namedItem(key);
-        if (field) field.value = ['startsAt', 'endsAt'].includes(key) ? localValue(value) : (value ?? '');
+        if (key === 'allDay') { field.checked = value === true; continue; }
+        if (field) field.value = ['startsAt', 'endsAt'].includes(key) ? (allDayField.checked ? packDay(value) : localValue(value)) : (value ?? '');
       }
       publishButton.hidden = !event || event.publicationState === 'published';
       archiveButton.hidden = !event || event.publicationState === 'archived';
@@ -172,7 +194,7 @@ ${renderAdminHeader("calendar")}
         status.className = 'status status--' + event.publicationState;
         status.textContent = event.publicationState;
         const details = document.createElement('small');
-        details.textContent = new Date(event.startsAt).toLocaleString() + ' · ' + event.eventStatus + ' · revision ' + event.revision;
+        details.textContent = (event.allDay ? new Date(event.startsAt).toLocaleDateString('en-US', { timeZone: 'America/New_York' }) + ' · All-day' : new Date(event.startsAt).toLocaleString()) + ' · ' + event.eventStatus + ' · revision ' + event.revision;
         item.append(button, document.createTextNode(' '), status, details);
         list.append(item);
       }

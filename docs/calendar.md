@@ -19,6 +19,15 @@ conflict rather than overwriting a change made since the event was loaded.
 Cancellation is an event status, independent of draft/published/archived state.
 There is no hard-delete route.
 
+Check **All-day** to enter dates instead of times. The end date is inclusive;
+leave it blank for a single day. The website shows dates only and subscriptions
+use iCalendar date values with the required exclusive next-day end. Instants
+are normalized to the start and end of those days in America/New_York so the
+event remains public through its final day. Existing events default to timed.
+The JSON contract includes `allDay`; older clients that omit it default to false.
+Apply `0006_calendar_all_day.sql` before deploying the CMS update. Deploy the
+public-site update, then check All-day on the Fall Campout and save it.
+
 ## Public API
 
 All JSON uses camelCase and includes `version: "v1"`.
