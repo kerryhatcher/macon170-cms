@@ -46,6 +46,13 @@ The response is bounded to 5,000 contacts, 20,000 active memberships and 200
 campaigns. Do not imply that an older record absent from those limits is deleted.
 Use get_mailing_list for the actual audience of a chosen list.
 
+Use preview_email to preview sanitized HTML and plain text without saving or
+sending. For rich drafts, pass html and a plain text fallback body. When editing
+an existing rich draft, preserve its body_html in html unless changing the
+formatting. Explicit html="" converts it to plain text. After a campaign has
+at least one accepted recipient, its public web copy is available at
+https://cms.macon170.com/email/messages/{campaign-id}.
+
 Saving contacts does not subscribe them. Set membership consent=true only when
 the user supplies actual consent evidence. Never override an unsubscribe or a
 suppression. Save an email draft before sending, then read back the final draft

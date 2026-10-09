@@ -78,6 +78,13 @@ const broadcastDraft = {
   listId: id,
   subject: z.string().min(1).max(200),
   body: z.string().min(1).max(20000),
+  html: z
+    .string()
+    .max(30000)
+    .optional()
+    .describe(
+      "Rich email HTML. Preserve body_html from the saved draft when editing; pass an empty string only to intentionally switch to plain text.",
+    ),
 };
 
 export function buildMcpServer(
@@ -465,7 +472,37 @@ export function buildMcpServer(
     "Create or edit an email draft for a mailing list. Does not send. Omit id to create.",
     broadcastDraft,
     "cms:write",
-    (a) => call("POST", broadcasts + "/drafts", a),
+    async (a) => {
+      if (a.id && a.html === undefined) {
+        const current = await env.DB.prepare(
+          "SELECT body_html FROM broadcasts WHERE id=?",
+        )
+          .bind(a.id)
+          .first<{ body_html: string | null }>();
+        if (current?.body_html)
+          return {
+            content: [
+              {
+                type: "text",
+                text: "This draft has rich HTML. Read it and supply html explicitly to preserve or change the formatting; use an empty string to intentionally convert to plain text.",
+              },
+            ],
+            isError: true,
+          };
+      }
+      return call("POST", broadcasts + "/drafts", a);
+    },
+  );
+  tool(
+    "preview_email",
+    "Preview sanitized rich HTML and plain text using the CMS email renderer. Does not save or send.",
+    {
+      subject: broadcastDraft.subject,
+      body: broadcastDraft.body,
+      html: broadcastDraft.html,
+    },
+    "cms:read",
+    (a) => call("POST", broadcasts + "/preview", a),
   );
   tool(
     "send_email_broadcast",

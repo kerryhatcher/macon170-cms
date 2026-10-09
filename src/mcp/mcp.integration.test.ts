@@ -355,7 +355,7 @@ describe("ChatGPT OAuth and MCP", () => {
     });
     expect(initialized.error).toBeUndefined();
     const tools = (await rpc(a.access_token, "tools/list")).result.tools;
-    expect(tools.length).toBe(30);
+    expect(tools.length).toBe(31);
     expect(
       tools.find((t) => t.name === "send_email_broadcast")?.annotations,
     ).toMatchObject({ readOnlyHint: false, openWorldHint: true });
@@ -565,6 +565,53 @@ describe("ChatGPT OAuth and MCP", () => {
     expect(
       (await tool(a.access_token, "get_signup_form", { id: saved.id })).isError,
     ).toBe(false);
+  });
+  it("previews sanitized HTML and preserves rich drafts unless a conversion is explicit", async () => {
+    const a = await connect();
+    await tool(a.access_token, "save_mailing_list", {
+      name: "Pack news",
+      slug: "pack-news",
+    });
+    const list = db.prepare("SELECT id FROM broadcast_lists").get()!.id;
+    const html = "<p><strong>Pack update</strong></p><script>alert(1)</script>";
+    const preview = await tool(a.access_token, "preview_email", {
+      subject: "Pack news",
+      body: "Pack update",
+      html,
+    });
+    expect(preview.isError).toBe(false);
+    expect(preview.content[0]!.text).toContain("<strong>Pack update</strong>");
+    expect(preview.content[0]!.text).not.toContain("<script>");
+    const draft = await tool(a.access_token, "save_email_draft", {
+      listId: list,
+      subject: "Pack news",
+      body: "Pack update",
+      html,
+    });
+    expect(draft.isError).toBe(false);
+    const id = JSON.parse(draft.content[0]!.text).data.id;
+    expect(
+      (
+        await tool(a.access_token, "save_email_draft", {
+          id,
+          listId: list,
+          subject: "Updated",
+          body: "Pack update",
+        })
+      ).isError,
+    ).toBe(true);
+    expect(
+      (
+        await tool(a.access_token, "save_email_draft", {
+          id,
+          listId: list,
+          subject: "Updated",
+          body: "Pack update",
+          html: "",
+        })
+      ).isError,
+    ).toBe(false);
+    expect(send).not.toHaveBeenCalled();
   });
   it("expires credentials, cleans storage, and bounds incoming bodies", async () => {
     const a = await connect();

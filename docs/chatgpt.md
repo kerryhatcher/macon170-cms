@@ -5,9 +5,9 @@ Its plugin ID is `plugins_6ac97b8340a88191a80b8dfd27c0bb08`; the initial release
 `pluginrel_6ac97b83d7a48191a837ac7785790531`. Preserve this identity for future updates.
 
 The private plugin source is in `plugins/macon170`. The CMS hosts its Streamable
-HTTP MCP endpoint at `https://cms.macon170.com/mcp`. It exposes 30 tools covering
+HTTP MCP endpoint at `https://cms.macon170.com/mcp`. It exposes 31 tools covering
 Pack calendar events, leadership roles, RSVP/item signups, private parent
-inquiries, mailing lists and contacts, email drafts and broadcast queuing,
+inquiries, mailing lists and contacts, rich email drafts, sanitized previews and broadcast queuing,
 statistics, and volunteer invitations. It uses existing CMS handlers rather
 than an alternate content store or direct email provider access.
 
