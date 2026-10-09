@@ -201,6 +201,8 @@ for (const [id, path] of [
     action(form.querySelector("button"), async () => {
       await api(path, Object.fromEntries(new FormData(form)));
       form.reset();
+      const idField = form.elements.namedItem("id");
+      if (idField) idField.value = "";
       $("draft-title").textContent = "Draft an email";
       notice("Saved.");
       await load();

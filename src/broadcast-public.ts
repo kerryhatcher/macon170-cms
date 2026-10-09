@@ -16,12 +16,12 @@ import {
 
 export function publicPage(title: string, body: string): Response {
   return new Response(
-    `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>${escape(title)} · Pack 170</title><style>body{font:18px/1.6 system-ui;max-width:640px;margin:3rem auto;padding:1rem;color:#163452}label{display:block;margin:1rem 0}input:not([type=checkbox]),button{font:inherit;padding:.6rem;max-width:100%;box-sizing:border-box}button{background:#153956;color:white;border:0;border-radius:5px;cursor:pointer}</style><h1>${escape(title)}</h1>${body}</html>`,
+    `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="same-origin"><title>${escape(title)} · Pack 170</title><style>body{font:18px/1.6 system-ui;max-width:640px;margin:3rem auto;padding:1rem;color:#163452}label{display:block;margin:1rem 0}input:not([type=checkbox]),button{font:inherit;padding:.6rem;max-width:100%;box-sizing:border-box}button{background:#153956;color:white;border:0;border-radius:5px;cursor:pointer}</style><h1>${escape(title)}</h1>${body}</html>`,
     {
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
-        "Referrer-Policy": "no-referrer",
+        "Referrer-Policy": "same-origin",
         "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy":
           "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
