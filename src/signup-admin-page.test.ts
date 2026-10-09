@@ -27,7 +27,10 @@ interface FakeElement {
   dataset: Record<string, string>;
   parentElement: FakeElement | null;
   children: FakeElement[];
-  addEventListener: (type: string, handler: (event: unknown) => unknown) => void;
+  addEventListener: (
+    type: string,
+    handler: (event: unknown) => unknown,
+  ) => void;
   append: (...children: FakeElement[]) => void;
   replaceChildren: (...children: FakeElement[]) => void;
   remove: () => void;
@@ -126,6 +129,7 @@ function runSignupDetailScript(
     startsAt: string;
     publicationState: string;
   }> | null = null,
+  browserTimeZone?: string,
 ) {
   const match = html.match(/<script type="module">([\s\S]*?)<\/script>/);
   if (!match) throw new Error("module script not found in rendered page");
@@ -166,7 +170,10 @@ function runSignupDetailScript(
   let confirmResult = true;
 
   const requests: FakeRequest[] = [];
-  const fakeFetch = async (path: string, options: { method?: string; body?: string } = {}) => {
+  const fakeFetch = async (
+    path: string,
+    options: { method?: string; body?: string } = {},
+  ) => {
     const method = options.method ?? "GET";
     requests.push({ path, method, body: options.body });
     if (path.startsWith("/api/signups-admin/v1/forms/") && method === "GET") {
@@ -176,13 +183,23 @@ function runSignupDetailScript(
         json: async () => ({
           form: loadedForm,
           responses: loadedResponses,
-          summary: { families: 0, attending: 0, adults: 0, children: 0, unconfirmed: 0 },
+          summary: {
+            families: 0,
+            attending: 0,
+            adults: 0,
+            children: 0,
+            unconfirmed: 0,
+          },
         }),
       };
     }
     if (path === "/api/calendar-admin/v1/events") {
       if (calendarEvents) {
-        return { ok: true, status: 200, json: async () => ({ events: calendarEvents }) };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ events: calendarEvents }),
+        };
       }
       return {
         ok: false,
@@ -191,7 +208,11 @@ function runSignupDetailScript(
       };
     }
     if (path.startsWith("/api/signups-admin/v1/forms/") && method === "PUT") {
-      return { ok: true, status: 200, json: async () => ({ form: loadedForm }) };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ form: loadedForm }),
+      };
     }
     throw new Error(`Unexpected fetch: ${method} ${path}`);
   };
@@ -224,6 +245,19 @@ function runSignupDetailScript(
       },
     },
   };
+  if (browserTimeZone) {
+    sandbox.Date = class extends Date {
+      override toLocaleDateString(
+        locales?: Intl.LocalesArgument,
+        options?: Intl.DateTimeFormatOptions,
+      ) {
+        return super.toLocaleDateString(locales, {
+          timeZone: browserTimeZone,
+          ...options,
+        });
+      }
+    };
+  }
   vm.createContext(sandbox);
   vm.runInContext(script, sandbox);
 
@@ -291,6 +325,39 @@ describe("renderSignupAdminPage", () => {
 });
 
 describe("renderSignupAdminDetailPage", () => {
+  it("keeps an all-day event's pack date in a Pacific-time signup picker", async () => {
+    const html = renderSignupAdminDetailPage("csrf-token", null);
+    const { eventSelectEl } = runSignupDetailScript(
+      html,
+      {
+        id: "",
+        title: "",
+        slug: "",
+        state: "draft",
+        instructions: "",
+        closesAt: null,
+        formType: "rsvp",
+        eventId: "",
+        revision: 1,
+        slots: [],
+      },
+      [],
+      [
+        {
+          id: "camp",
+          title: "Fall Campout",
+          startsAt: "2026-10-24T04:00:00.000Z",
+          publicationState: "published",
+        },
+      ],
+      "America/Los_Angeles",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      eventSelectEl.children.find((option) => option.value === "camp")
+        ?.textContent,
+    ).toBe("Fall Campout — 10/24/2026");
+  });
   it("never lets an attacker-controlled formId close the inline <script> element", () => {
     const hostile = "</script><script>alert(1)</script>";
     const html = renderSignupAdminDetailPage("csrf-token", hostile);
@@ -350,10 +417,8 @@ describe("renderSignupAdminDetailPage", () => {
       slots: [],
     };
 
-    const { eventSelectEl, settingsFormListeners, requests } = runSignupDetailScript(
-      html,
-      loadedForm,
-    );
+    const { eventSelectEl, settingsFormListeners, requests } =
+      runSignupDetailScript(html, loadedForm);
 
     // Let the immediately-invoked loadForm() — and the nested
     // loadEventOptions() 403 catch that disables #event-select — settle.
@@ -448,10 +513,30 @@ describe("renderSignupAdminDetailPage", () => {
       },
       [],
       [
-        { id: "older", title: "Older", startsAt: older, publicationState: "published" },
-        { id: "later", title: "Later", startsAt: later, publicationState: "published" },
-        { id: "past", title: "Past", startsAt: past, publicationState: "published" },
-        { id: "soon", title: "Soon", startsAt: soon, publicationState: "published" },
+        {
+          id: "older",
+          title: "Older",
+          startsAt: older,
+          publicationState: "published",
+        },
+        {
+          id: "later",
+          title: "Later",
+          startsAt: later,
+          publicationState: "published",
+        },
+        {
+          id: "past",
+          title: "Past",
+          startsAt: past,
+          publicationState: "published",
+        },
+        {
+          id: "soon",
+          title: "Soon",
+          startsAt: soon,
+          publicationState: "published",
+        },
       ],
     );
 
@@ -493,7 +578,9 @@ describe("renderSignupAdminDetailPage", () => {
       formType: "items",
       eventId: "event-1",
       revision: 3,
-      slots: [{ id: "slot-a", label: "Hot dogs", quantityNeeded: 20, notes: null }],
+      slots: [
+        { id: "slot-a", label: "Hot dogs", quantityNeeded: 20, notes: null },
+      ],
     };
     const loadedResponses = [
       { claims: [{ slotId: "slot-a" }] },
@@ -516,7 +603,9 @@ describe("renderSignupAdminDetailPage", () => {
     // Simulate clicking the row's Remove button, exactly as a volunteer
     // would in the real DOM — not just deleting the row out from under the
     // script.
-    const removeButton = row.children.find((child) => child.className === "danger");
+    const removeButton = row.children.find(
+      (child) => child.className === "danger",
+    );
     expect(removeButton).toBeDefined();
     removeButton?.click();
     expect(slotListEl.querySelectorAll(".slot-row")).toHaveLength(0);
@@ -550,7 +639,9 @@ describe("renderSignupAdminDetailPage", () => {
       formType: "items",
       eventId: "event-1",
       revision: 3,
-      slots: [{ id: "slot-a", label: "Hot dogs", quantityNeeded: 20, notes: null }],
+      slots: [
+        { id: "slot-a", label: "Hot dogs", quantityNeeded: 20, notes: null },
+      ],
     };
     const loadedResponses = [{ claims: [{ slotId: "slot-a" }] }];
 
@@ -580,7 +671,12 @@ describe("renderSignupAdminDetailPage", () => {
     expect(putRequest).toBeDefined();
     const putBody = JSON.parse(putRequest?.body ?? "{}");
     expect(putBody.slots).toEqual([
-      { id: "slot-a", label: "Hot dogs (bring buns too)", quantityNeeded: 20, notes: null },
+      {
+        id: "slot-a",
+        label: "Hot dogs (bring buns too)",
+        quantityNeeded: 20,
+        notes: null,
+      },
     ]);
   });
 });

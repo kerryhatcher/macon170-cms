@@ -376,7 +376,7 @@ async function loadEventOptions(selectedEventId) {
     const options = sorted.map((event) => {
       const option = document.createElement('option');
       option.value = event.id;
-      option.textContent = event.title + ' — ' + new Date(event.startsAt).toLocaleDateString();
+      option.textContent = event.title + ' — ' + new Date(event.startsAt).toLocaleDateString('en-US', { timeZone: 'America/New_York' });
       return option;
     });
     if (selectedEventId === null) {
