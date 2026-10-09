@@ -234,3 +234,12 @@ deployment directly.
 ## License
 
 MIT
+
+## Email broadcasts
+
+Use `/admin/broadcasts` to manage named mailing lists and contacts, publish list
+signup links, draft messages, and review delivery/open/bounce statistics.
+Volunteers require `broadcasts.manage`. Public signup uses email confirmation;
+every broadcast includes subscription controls. See [broadcast setup and
+operations](docs/broadcasts.md) for the required Postmark stream, webhook,
+Google sender requirements, and delivery/suppression behavior.

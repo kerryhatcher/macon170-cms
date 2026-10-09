@@ -43,7 +43,7 @@
   },
   // TURNSTILE_SECRET, POSTMARK_SERVER_TOKEN, and the rollout
   // toggle SIGNUP_REQUIRE_PHONE are Worker secrets.
-  "triggers": { "crons": ["17 3 * * *"] },
+  "triggers": { "crons": ["17 3 * * *", "* * * * *"] },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,

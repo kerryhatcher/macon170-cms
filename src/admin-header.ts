@@ -9,7 +9,8 @@ export type AdminPage =
   | "leadership"
   | "contact-form"
   | "calendar"
-  | "signups";
+  | "signups"
+  | "broadcasts";
 
 export function renderAdminHeader(currentPage: AdminPage): string {
   const links: Array<{ href: string; label: string; page: AdminPage }> = [
@@ -18,6 +19,7 @@ export function renderAdminHeader(currentPage: AdminPage): string {
     { href: "/admin/contact-form", label: "Contact Form", page: "contact-form" },
     { href: "/admin/calendar", label: "Calendar", page: "calendar" },
     { href: "/admin/signups", label: "Signups", page: "signups" },
+    { href: "/admin/broadcasts", label: "Email", page: "broadcasts" },
   ];
 
   const navItems = links
@@ -51,7 +53,7 @@ export function renderAdminHeaderStyles(): string {
 .admin-header__nav a[aria-current="page"]{background:rgba(255,255,255,.1);color:#fff}
 @media(hover:hover){.admin-header__nav a:hover{background:rgba(255,255,255,.1);color:#fff}}
 .admin-header__toggle{display:none;margin-left:auto;border:2px solid rgba(255,255,255,.65);background:transparent;color:#fff;min-width:48px;min-height:48px;border-radius:8px;font-weight:700;font:inherit;cursor:pointer}
-@media(max-width:800px){.admin-header__toggle{display:block}
+@media(max-width:1000px){.admin-header__toggle{display:block}
 .admin-header__nav{display:none;position:absolute;top:72px;left:0;right:0;padding:1rem;background:var(--deep);box-shadow:0 14px 24px rgba(0,0,0,.25);flex-direction:column}
 .admin-header__nav[data-open="true"]{display:flex}
 .admin-header__nav a,.admin-header__nav a.nav-priority{min-height:50px;margin:0;padding:.7rem 1rem;border-radius:4px}}

@@ -13,3 +13,10 @@ POSTMARK_SERVER_TOKEN=POSTMARK_API_TEST
 # Cloudflare's documented always-pass test secret. Replace only in the ignored
 # .dev.vars file; configure the real value with `wrangler secret put` in production.
 TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+
+# Email broadcasts: configure a Postmark Broadcast stream before live sending.
+# BROADCAST_FROM_EMAIL=volunteers@macon170.com
+# BROADCAST_STREAM=broadcast
+# BROADCAST_ORIGIN=http://localhost:41772
+# BROADCAST_WEBHOOK_SECRET=replace-with-a-random-local-secret
+# BROADCAST_UNSUBSCRIBE_MODE=postmark
