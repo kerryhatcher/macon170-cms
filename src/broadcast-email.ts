@@ -13,6 +13,9 @@ export function escapeEmail(value: string): string {
 
 export function sanitizeEmailHtml(value: string): string {
   return sanitizeHtml(value, {
+    // Quill exports ordinary word spaces as nonbreaking spaces. Normalize text
+    // nodes so email clients can wrap paragraphs at word boundaries.
+    textFilter: (text) => text.replace(/\u00a0|&nbsp;/g, " "),
     allowedTags: [
       "p",
       "div",

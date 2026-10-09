@@ -39,3 +39,9 @@ it("uses escaped recipient names only in individual messages and generic names o
   expect(publicMessage.subject).toBe("Hello friend");
   expect(publicMessage.html).not.toContain("Alex");
 });
+
+it("normalizes editor-exported spaces so email paragraphs wrap between words", () => {
+  expect(sanitizeEmailHtml("<p>Hello&nbsp;Pack\u00a0170</p>")).toBe(
+    "<p>Hello Pack 170</p>",
+  );
+});
