@@ -433,6 +433,18 @@ it("enforces authentication, active accounts, explicit volunteer permissions, or
     ctx,
   );
   expect(page.status).toBe(200);
+  const editorPolicy = page.headers.get("Content-Security-Policy");
+  expect(editorPolicy).toContain("script-src 'self' 'unsafe-inline'");
+  expect(editorPolicy).toContain("style-src 'self' 'unsafe-inline'");
+  expect(editorPolicy).toContain("img-src 'self' https:;");
+  const listResponse = await handle(
+    new Request(listPage, { headers: { Authorization: "Bearer " + token } }),
+    env,
+    ctx,
+  );
+  expect(listResponse.headers.get("Content-Security-Policy")).not.toContain(
+    "img-src 'self' https:;",
+  );
   expect(
     (
       await handle(

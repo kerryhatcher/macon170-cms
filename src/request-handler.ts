@@ -168,6 +168,8 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
         const csrf = await ensureCsrfToken(request, env);
         if (csrf instanceof Response) return csrf;
         const response = htmlResponse(broadcastListPage ? renderBroadcastListPage(csrf.token, broadcastListPage[1]!) : renderBroadcastAdminPage(csrf.token));
+        if (!broadcastListPage) response.headers.set("Content-Security-Policy",
+          "default-src 'self'; img-src 'self' https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'");
         response.headers.append("Set-Cookie", csrf.cookie);
         return response;
       }
