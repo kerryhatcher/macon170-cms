@@ -34,7 +34,8 @@ export async function verifyBroadcastSignup(
       {
         method: "POST",
         body,
-        redirect: "error",
+        // Workers supports manual redirects; non-2xx responses fail closed below.
+        redirect: "manual",
         signal: AbortSignal.timeout(10000),
       },
     );
