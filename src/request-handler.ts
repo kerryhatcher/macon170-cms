@@ -1,3 +1,6 @@
+import { BROADCAST_API, handleBroadcastAdmin, handleBroadcastWebhook, type BroadcastBindings } from "./broadcasts";
+import { handleBroadcastPublic } from "./broadcast-public";
+import { renderBroadcastAdminPage } from "./broadcast-admin-page";
 import type { Bindings } from "@sonicjs-cms/core";
 import {
   AuthManager,
@@ -147,6 +150,29 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
           "Content-Type": jsonContentType,
         },
       });
+    }
+
+    if (pathname === "/api/broadcast-webhook") return handleBroadcastWebhook(request, env as BroadcastBindings);
+    if (pathname.startsWith("/email/")) return handleBroadcastPublic(request, env as BroadcastBindings);
+    if (pathname === "/admin/broadcasts" || pathname === BROADCAST_API || pathname.startsWith(BROADCAST_API + "/")) {
+      const user = await authenticate(request, env);
+      if (!user) return pathname === "/admin/broadcasts"
+        ? Response.redirect(`${url.origin}/auth/login?returnTo=%2Fadmin%2Fbroadcasts`, 302)
+        : errorResponse(401, "unauthorized", "Sign in required.");
+      if (!(await hasPermission(env, user, "broadcasts.manage"))) return errorResponse(403, "forbidden", "The broadcasts.manage permission is required.");
+      if (pathname === "/admin/broadcasts") {
+        if (request.method !== "GET") return errorResponse(405, "method_not_allowed", "Method not allowed.");
+        const csrf = await ensureCsrfToken(request, env);
+        if (csrf instanceof Response) return csrf;
+        const response = htmlResponse(renderBroadcastAdminPage(csrf.token));
+        response.headers.append("Set-Cookie", csrf.cookie);
+        return response;
+      }
+      if (request.method !== "GET") {
+        const error = await validateMutationCsrf(request, env);
+        if (error) return error;
+      }
+      return handleBroadcastAdmin(request, env as BroadcastBindings, user.userId);
     }
 
     if (isPublicCalendarPath(pathname)) {

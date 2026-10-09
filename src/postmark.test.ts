@@ -13,7 +13,7 @@ describe("Postmark delivery deadline", () => {
       from: "volunteers@example.test", to: "parent@example.test", subject: "Setup",
       text: "Setup", html: "Setup",
     }, send);
-    if (outcome === "accepted") await expect(delivery).resolves.toBeUndefined();
+    if (outcome === "accepted") await expect(delivery).resolves.toBe("message-test");
     else await expect(delivery).rejects.toThrow(outcome === "rejected" ? "403" : /^Postmark request failed\.$/);
     // No clock advance: this catches a missing finally cleanup even on success.
     expect(vi.getTimerCount()).toBe(0);

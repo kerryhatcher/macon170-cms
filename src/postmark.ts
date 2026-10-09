@@ -16,6 +16,9 @@ type PostmarkMessage = {
   text: string;
   html: string;
   replyTo?: string | undefined;
+  stream?: string;
+  metadata?: Record<string, string>;
+  headers?: Array<{ Name: string; Value: string }>;
 };
 
 export class PostmarkDeliveryError extends Error {
@@ -33,7 +36,7 @@ export async function sendPostmarkEmail(
   env: PostmarkBindings,
   message: PostmarkMessage,
   fetchImpl: typeof fetch = fetch,
-): Promise<void> {
+): Promise<string> {
   if (!isPostmarkConfigured(env)) {
     throw new Error("Postmark email is not configured.");
   }
@@ -44,7 +47,9 @@ export async function sendPostmarkEmail(
     TextBody: message.text,
     HtmlBody: message.html,
     ...(message.replyTo ? { ReplyTo: message.replyTo } : {}),
-    MessageStream: "outbound",
+    MessageStream: message.stream ?? "outbound",
+    Metadata: message.metadata,
+    Headers: message.headers,
     TrackOpens: true,
     TrackLinks: "None",
   });
@@ -78,6 +83,7 @@ export async function sendPostmarkEmail(
     ) {
       throw new PostmarkDeliveryError();
     }
+    return result.MessageID;
   } catch (error) {
     if (error instanceof PostmarkDeliveryError) throw error;
     // Provider/network errors can contain credentials or magic links.

@@ -1,3 +1,4 @@
+import { runBroadcastDelivery, type BroadcastBindings } from "./broadcasts"
 import { createSonicJSApp, registerCollections } from '@sonicjs-cms/core'
 import type { Bindings, SonicJSConfig } from '@sonicjs-cms/core'
 
@@ -35,7 +36,11 @@ export default {
   async fetch(request: Request, env: Bindings, ctx: ExecutionContext): Promise<Response> {
     return handleRequest(request, env, ctx)
   },
-  async scheduled(_controller: ScheduledController, env: Bindings): Promise<void> {
+  async scheduled(controller: ScheduledController, env: Bindings): Promise<void> {
+    if (controller.cron === "* * * * *") {
+      await runBroadcastDelivery(env as BroadcastBindings)
+      return
+    }
     // The two passes are independent D1 batches, so one failing must not be
     // reported as the other failing. Before 0004_signups.sql is applied the
     // signup pass throws on a missing table, and without this isolation that
