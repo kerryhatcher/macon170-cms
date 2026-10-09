@@ -4,7 +4,7 @@ Open `/admin/broadcasts` (Email in the CMS header). Create a named list and a
 unique lowercase signup slug, save contacts, then select a contact and one or
 more lists to add or remove. Adding requires an explicit consent attestation.
 The signup link is `/email/signup/<slug>` on the CMS domain. Public subscribers
-must check the consent box and confirm their address using a single-use link
+must pass Turnstile, check the consent box, and confirm their address using a single-use link
 that expires after 24 hours. Signup is limited by IP and confirmation emails
 are limited to one per contact per list per hour while a confirmation remains pending.
 Existing active subscribers are not sent redundant confirmation emails.
@@ -58,11 +58,20 @@ when updating Quill. No third-party CDN is needed. Use the existing
 
 | Binding | Value |
 | --- | --- |
+| `BROADCAST_TURNSTILE_SITE_KEY` | The existing Pack Turnstile public sitekey; the widget must allow the CMS hostname |
+| `TURNSTILE_SECRET` | Existing matching Worker secret, shared with the contact/signup integration |
 | `BROADCAST_FROM_EMAIL` | A verified Pack sender address (for example `volunteers@macon170.com`) |
 | `BROADCAST_STREAM` | The ID of a **Broadcast** Postmark message stream; never `outbound` |
 | `BROADCAST_ORIGIN` | `https://cms.macon170.com` without a trailing slash |
 | `BROADCAST_WEBHOOK_SECRET` | A new random secret, stored with Wrangler secrets |
 | `BROADCAST_UNSUBSCRIBE_MODE` | Omit or use `postmark`; use `custom` only after Postmark approval |
+
+List signup verifies Turnstile on the server with action `broadcast_signup` and
+an exact hostname match to `BROADCAST_ORIGIN`. Missing, invalid, expired, reused,
+wrong-action, and wrong-host tokens are rejected before contact writes or mail.
+Verification outages fail closed. Unsubscribe and email confirmation links
+remain usable without a CAPTCHA. The native signup form navigates after posting;
+returning to the signup page obtains a fresh token for retries.
 
 Keep `JWT_SECRET` configured: it signs public preference and confirmation
 links. Rotating it invalidates those links. The existing `SIGNUP_RATE_LIMITER`

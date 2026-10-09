@@ -14,6 +14,8 @@ import {
 
 export type BroadcastBindings = Bindings &
   PostmarkBindings & {
+    TURNSTILE_SECRET?: string;
+    BROADCAST_TURNSTILE_SITE_KEY?: string;
     BROADCAST_FROM_EMAIL?: string;
     BROADCAST_STREAM?: string;
     BROADCAST_UNSUBSCRIBE_MODE?: "postmark" | "custom";

@@ -17,6 +17,7 @@ import { createCmsRequestHandler } from "./request-handler";
 let sqlite: DatabaseSync;
 let env: BroadcastBindings;
 const send = vi.fn();
+const verifySignup = vi.fn();
 type Statement = { run(): Promise<unknown> };
 function adapter() {
   return {
@@ -103,7 +104,12 @@ async function publicPost(path: string, body: Record<string, string> = {}) {
         Origin: "https://cms.example",
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams(body),
+      body: new URLSearchParams({
+        ...(path.startsWith("/email/signup/")
+          ? { "cf-turnstile-response": "valid-test-token" }
+          : {}),
+        ...body,
+      }),
     }),
     env,
   );
@@ -141,6 +147,8 @@ beforeEach(() => {
     DB: adapter(),
     JWT_SECRET: "test-broadcast-secret",
     POSTMARK_SERVER_TOKEN: "test-key",
+    TURNSTILE_SECRET: "test-turnstile-secret",
+    BROADCAST_TURNSTILE_SITE_KEY: "test-site-key",
     BROADCAST_FROM_EMAIL: "pack@example.test",
     BROADCAST_STREAM: "broadcast",
     BROADCAST_UNSUBSCRIBE_MODE: "custom",
@@ -153,7 +161,18 @@ beforeEach(() => {
     .mockImplementation(async () =>
       Response.json({ ErrorCode: 0, MessageID: crypto.randomUUID() }),
     );
-  vi.stubGlobal("fetch", send);
+  verifySignup.mockReset().mockImplementation(async () =>
+    Response.json({
+      success: true,
+      action: "broadcast_signup",
+      hostname: "cms.example",
+    }),
+  );
+  vi.stubGlobal("fetch", (url: RequestInfo | URL, init?: RequestInit) =>
+    String(url).includes("/turnstile/v0/siteverify")
+      ? verifySignup(url, init)
+      : send(url, init),
+  );
 });
 afterEach(() => {
   sqlite.close();
@@ -660,4 +679,99 @@ it("publishes a UUID web copy only after provider acceptance, without recipient 
       })
     ).status,
   ).toBe(400);
+});
+
+it("renders Turnstile only on signup pages and fails closed before side effects", async () => {
+  const page = await handleBroadcastPublic(
+    new Request("https://cms.example/email/signup/pack-news"),
+    env,
+  );
+  expect(await page.text()).toContain('data-action="broadcast_signup"');
+  expect(page.headers.get("Content-Security-Policy")).toContain(
+    "script-src https://challenges.cloudflare.com",
+  );
+  for (const token of ["", "x".repeat(2049)]) {
+    expect(
+      (
+        await publicPost("/email/signup/pack-news", {
+          email: "blocked@example.test",
+          consent: "yes",
+          "cf-turnstile-response": token,
+        })
+      ).status,
+    ).toBe(403);
+  }
+  expect(verifySignup).not.toHaveBeenCalled();
+  expect(send).not.toHaveBeenCalled();
+  expect(query("SELECT * FROM broadcast_contacts")).toHaveLength(1);
+  delete env.TURNSTILE_SECRET;
+  expect(
+    (
+      await publicPost("/email/signup/pack-news", {
+        email: "blocked@example.test",
+        consent: "yes",
+      })
+    ).status,
+  ).toBe(503);
+});
+it("rejects invalid, replayed, wrong-host, wrong-action and unavailable Turnstile checks", async () => {
+  const body = { email: "blocked@example.test", consent: "yes" };
+  for (const result of [
+    { success: false, "error-codes": ["timeout-or-duplicate"] },
+    { success: true, hostname: "other.example", action: "broadcast_signup" },
+    { success: true, hostname: "cms.example", action: "turnstile-spin-v2" },
+    { success: "true", hostname: "cms.example", action: "broadcast_signup" },
+  ]) {
+    verifySignup.mockResolvedValueOnce(Response.json(result));
+    expect((await publicPost("/email/signup/pack-news", body)).status).toBe(
+      403,
+    );
+  }
+  verifySignup.mockResolvedValueOnce(
+    new Response("unavailable", { status: 503 }),
+  );
+  expect((await publicPost("/email/signup/pack-news", body)).status).toBe(403);
+  verifySignup.mockRejectedValueOnce(new Error("network failure"));
+  expect((await publicPost("/email/signup/pack-news", body)).status).toBe(403);
+  expect(send).not.toHaveBeenCalled();
+  expect(query("SELECT * FROM broadcast_contacts")).toHaveLength(1);
+  expect(query("SELECT * FROM broadcast_confirmations")).toHaveLength(0);
+});
+it("accepts a valid signup verification once and rejects the provider's replay result", async () => {
+  const body = {
+    email: "verified@example.test",
+    consent: "yes",
+    "cf-turnstile-response": "single-use-token",
+  };
+  expect((await publicPost("/email/signup/pack-news", body)).status).toBe(200);
+  const verificationBody = verifySignup.mock.calls[0]![1]
+    .body as URLSearchParams;
+  expect(verificationBody.get("response")).toBe("single-use-token");
+  expect(verificationBody.get("secret")).toBe("test-turnstile-secret");
+  expect(send).toHaveBeenCalledTimes(1);
+  verifySignup.mockResolvedValueOnce(
+    Response.json({ success: false, "error-codes": ["timeout-or-duplicate"] }),
+  );
+  expect((await publicPost("/email/signup/pack-news", body)).status).toBe(403);
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(query("SELECT * FROM broadcast_confirmations")).toHaveLength(1);
+});
+it("rejects malformed and oversized verification responses", async () => {
+  for (const response of [
+    new Response("not JSON"),
+    new Response("x".repeat(8193)),
+    Response.json(null),
+  ]) {
+    verifySignup.mockResolvedValueOnce(response);
+    expect(
+      (
+        await publicPost("/email/signup/pack-news", {
+          email: "blocked@example.test",
+          consent: "yes",
+        })
+      ).status,
+    ).toBe(403);
+  }
+  expect(send).not.toHaveBeenCalled();
+  expect(query("SELECT * FROM broadcast_contacts")).toHaveLength(1);
 });
