@@ -19,12 +19,14 @@ export function renderLoginPage(url: URL): string {
   const requestedReturnTo = url.searchParams.get('returnTo')
   const allowedReturnTo = new Set([
     '/dash',
+    '/admin/chatgpt',
     '/admin/calendar',
     '/admin/contact-form',
     '/admin/leadership',
     '/admin/broadcasts',
   ])
-  const returnTo = (allowedReturnTo.has(requestedReturnTo ?? '') ||
+  const oauthReturn = !!requestedReturnTo && requestedReturnTo.startsWith('/oauth/mcp/authorize?') && !/[\\\r\n]/.test(requestedReturnTo)
+  const returnTo = (oauthReturn || allowedReturnTo.has(requestedReturnTo ?? '') ||
     /^\/admin\/broadcasts\/lists\/[a-zA-Z0-9_-]{1,80}$/.test(requestedReturnTo ?? ''))
     ? requestedReturnTo!
     : '/dash'
