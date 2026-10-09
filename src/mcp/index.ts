@@ -35,6 +35,12 @@ export async function handleMcp(
       return json({ error: "Sign in to the Pack 170 CMS." }, 401, {
         "WWW-Authenticate": `Bearer resource_metadata="${env.MCP_ORIGIN}/.well-known/oauth-protected-resource", scope="cms:read cms:write cms:send"`,
       });
+    if (request.method !== "POST")
+      return json(
+        { error: "This stateless MCP endpoint accepts POST requests." },
+        405,
+        { Allow: "POST" },
+      );
     // No shared server state: each invocation binds exactly one grant and actor.
     const server = buildMcpServer(env, auth.actor, auth.grant, dispatch);
     const transport = new WebStandardStreamableHTTPServerTransport({

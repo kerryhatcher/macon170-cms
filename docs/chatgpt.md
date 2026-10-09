@@ -2,8 +2,8 @@
 
 The saved private plugin is [Pack 170](https://chatgpt.com/plugins/plugins_6ac97b8340a88191a80b8dfd27c0bb08).
 Its plugin ID is `plugins_6ac97b8340a88191a80b8dfd27c0bb08`; the initial release is
-`pluginrel_6ac97b83d7a48191a837ac7785790531`. Version 1.0.1 is saved as
-`pluginrel_6ac97c69e7688191ad611d63a015972a`. Preserve the plugin identity for future updates.
+`pluginrel_6ac97b83d7a48191a837ac7785790531`. Version 1.0.2 is saved as
+`pluginrel_6ac97d4819188191b716b4d9507e9178`. Preserve the plugin identity for future updates.
 
 The private plugin source is in `plugins/macon170`. The CMS hosts its Streamable
 HTTP MCP endpoint at `https://cms.macon170.com/mcp`. It exposes 31 tools covering
@@ -19,10 +19,14 @@ is reserved for the independent broadcast HTML change. The endpoint requires
 `JWT_SECRET`, `MCP_ORIGIN` and the configured `MCP_RATE_LIMITER`; no new provider
 secret is needed. Keep `MCP_ORIGIN` equal to the externally reachable origin.
 For local development override it in `.dev.vars` to the local Worker origin.
-OAuth clients require HTTPS redirect URIs.
+OAuth clients require HTTPS redirect URIs, except native desktop callbacks on
+HTTP loopback IPs (127.0.0.1 or ::1). Remote plain HTTP callbacks are rejected.
 
-Install the Pack 170 private plugin, connect it, and sign in with an active CMS
-administrator account. Consent lists the requested permissions and callback
+Install the Pack 170 private plugin. In Codex, open Settings → MCP servers and
+use Authenticate beside macon170 under From plugins (choose DCR if Auto fails).
+The button appears only after the app recognizes the live server as requiring
+OAuth; after a server deployment or plugin update, restart the app to refresh
+discovery if it is missing. Sign in with an active CMS administrator account. Consent lists the requested permissions and callback
 origin. Tokens never appear in plugin files. The three scopes are `cms:read`,
 `cms:write` and `cms:send`; email sending is separate from editing. Existing
 calendar, signup and broadcast permission checks still run for each operation.

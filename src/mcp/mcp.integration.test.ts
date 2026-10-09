@@ -613,6 +613,33 @@ describe("ChatGPT OAuth and MCP", () => {
     ).toBe(false);
     expect(send).not.toHaveBeenCalled();
   });
+  it("supports native loopback callbacks but rejects insecure remote callbacks", async () => {
+    for (const uri of [
+      "http://127.0.0.1:43219/callback",
+      "http://[::1]:43219/callback",
+    ]) {
+      expect(
+        (await request("/oauth/mcp/register", { redirect_uris: [uri] })).status,
+      ).toBe(201);
+    }
+    for (const uri of [
+      "http://evil.example/callback",
+      "http://127.0.0.1.evil.example/callback",
+      "https://user:password@example.test/callback",
+      "https://example.test/callback#fragment",
+    ]) {
+      expect(
+        (await request("/oauth/mcp/register", { redirect_uris: [uri] })).status,
+      ).toBe(400);
+    }
+    const a = await connect();
+    const response = await request("/mcp", undefined, {
+      Authorization: "Bearer " + a.access_token,
+      Accept: "text/event-stream",
+    });
+    expect(response.status).toBe(405);
+    expect(response.headers.get("Allow")).toBe("POST");
+  });
   it("expires credentials, cleans storage, and bounds incoming bodies", async () => {
     const a = await connect();
     db.exec("UPDATE mcp_tokens SET expires_at=0");

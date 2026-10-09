@@ -81,7 +81,11 @@ function validRedirect(value: unknown): value is string {
   if (typeof value !== "string" || value.length > 2048) return false;
   try {
     const u = new URL(value);
-    return u.protocol === "https:" && !u.username && !u.password && !u.hash;
+    const secure = u.protocol === "https:";
+    // RFC 8252 native applications receive OAuth callbacks on a loopback port.
+    const loopback =
+      u.protocol === "http:" && ["127.0.0.1", "[::1]"].includes(u.hostname);
+    return (secure || loopback) && !u.username && !u.password && !u.hash;
   } catch {
     return false;
   }
@@ -150,7 +154,9 @@ export async function oauthRoute(
       (body.token_endpoint_auth_method &&
         body.token_endpoint_auth_method !== "none")
     )
-      return oauthError("HTTPS redirect URIs and public clients are required.");
+      return oauthError(
+        "HTTPS or native loopback redirect URIs and public clients are required.",
+      );
     const client: Client = {
       redirect_uris: body.redirect_uris,
       client_name:

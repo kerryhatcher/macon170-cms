@@ -3,7 +3,23 @@
     "macon170": {
       "type": "streamable-http",
       "url": "https://cms.macon170.com/mcp",
-      "headers": {}
+      "headers": {},
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": {
+              "mode": "dcr"
+            },
+            "resource": "https://cms.macon170.com/mcp",
+            "defaultScopes": [
+              "cms:read",
+              "cms:write",
+              "cms:send"
+            ]
+          }
+        }
+      }
     }
   }
 }
