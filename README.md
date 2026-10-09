@@ -243,3 +243,10 @@ Volunteers require `broadcasts.manage`. Public signup uses email confirmation;
 every broadcast includes subscription controls. See [broadcast setup and
 operations](docs/broadcasts.md) for the required Postmark stream, webhook,
 Google sender requirements, and delivery/suppression behavior.
+
+## ChatGPT management
+
+The Pack 170 private plugin exposes the Pack management workflows through the
+authenticated `/mcp` endpoint. See [connection, permissions and rollout](docs/chatgpt.md).
+Plugin source is in `plugins/macon170`; administrators can revoke access at
+`/admin/chatgpt`.

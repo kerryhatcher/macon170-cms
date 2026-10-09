@@ -21,3 +21,6 @@ BROADCAST_TURNSTILE_SITE_KEY=1x00000000000000000000AA
 # BROADCAST_ORIGIN=http://localhost:41772
 # BROADCAST_WEBHOOK_SECRET=replace-with-a-random-local-secret
 # BROADCAST_UNSUBSCRIBE_MODE=postmark
+
+# Match the externally reachable Worker origin when testing ChatGPT locally.
+MCP_ORIGIN=http://localhost:41772

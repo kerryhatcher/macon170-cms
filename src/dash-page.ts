@@ -80,6 +80,7 @@ ${renderAdminHeader("dash")}
       <a href="/admin/contact-form">&#9993; Contact queue</a>
       <a href="/admin/calendar">&#128197; Event editor</a>
       <a href="/admin/users/invite">&#9993; Invite volunteer</a>
+      <a href="/admin/chatgpt">ChatGPT connections</a>
       <a href="/auth/logout">&#10140; Sign out</a>
     </nav>
   </div>

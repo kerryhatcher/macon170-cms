@@ -17,6 +17,7 @@
   ],
   "r2_buckets": [{ "binding": "MEDIA_BUCKET", "bucket_name": "macon170-cms-media" }],
   "ratelimits": [
+    { "name": "MCP_RATE_LIMITER", "namespace_id": "17006", "simple": { "limit": 120, "period": 60 } },
     {
       "name": "CONTACT_RATE_LIMITER",
       "namespace_id": "17004",
@@ -30,6 +31,7 @@
   ],
   "vars": {
     "APP_VERSION": "development",
+    "MCP_ORIGIN": "https://cms.macon170.com",
     "ENVIRONMENT": "production",
     "CORS_ORIGINS": "https://www.macon170.com",
     "PUBLIC_SITE_ORIGIN": "https://www.macon170.com",

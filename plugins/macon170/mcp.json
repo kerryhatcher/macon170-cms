@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "macon170": {
+      "type": "streamable-http",
+      "url": "https://cms.macon170.com/mcp"
+    }
+  }
+}
