@@ -1,3 +1,9 @@
+import {
+  sanitizeEmailHtml,
+  emailHtmlToText,
+  emailContent,
+  emailDocument,
+} from "./broadcast-email";
 import { timingSafeEqual } from "node:crypto";
 import type { Bindings } from "@sonicjs-cms/core";
 import {
@@ -8,6 +14,8 @@ import {
 
 export type BroadcastBindings = Bindings &
   PostmarkBindings & {
+    TURNSTILE_SECRET?: string;
+    BROADCAST_TURNSTILE_SITE_KEY?: string;
     BROADCAST_FROM_EMAIL?: string;
     BROADCAST_STREAM?: string;
     BROADCAST_UNSUBSCRIBE_MODE?: "postmark" | "custom";
@@ -151,6 +159,21 @@ async function equalSecret(a: string, b: string): Promise<boolean> {
   const [left, right] = await Promise.all([hash(a), hash(b)]);
   return timingSafeEqual(new Uint8Array(left), new Uint8Array(right));
 }
+function draftContent(input: Record<string, unknown>) {
+  const subject = required(input.subject, 200);
+  if (/[\r\n]/.test(subject))
+    throw new BroadcastError("Subject must be one line.");
+  const html =
+    typeof input.html === "string" && input.html.trim()
+      ? sanitizeEmailHtml(required(input.html, 30000))
+      : "";
+  let body = html ? emailHtmlToText(html) : required(input.body, 20000);
+  if (!body && html.includes("<img "))
+    body = "Image email — open the web version to view this message.";
+  body = required(body, 20000);
+  return { subject, body, html };
+}
+
 export async function handleBroadcastAdmin(
   request: Request,
   env: BroadcastBindings,
@@ -208,6 +231,14 @@ export async function handleBroadcastAdmin(
     }
     if (request.method !== "POST") return json({ message: "Not found." }, 404);
     const input = await readInput(request);
+    if (path === "/preview") {
+      const content = draftContent(input);
+      const preview = emailContent(content.subject, content.body, content.html);
+      return json({
+        html: emailDocument(preview.subject, preview.html),
+        text: preview.text,
+      });
+    }
     if (path === "/lists") {
       const name = required(input.name, 100),
         slug = required(input.slug, 80);
@@ -291,28 +322,27 @@ export async function handleBroadcastAdmin(
         ),
       );
     } else if (path === "/drafts") {
-      const subject = required(input.subject, 200),
-        body = required(input.body, 20000),
-        list = required(input.listId, 80);
-      if (/[\r\n]/.test(subject))
-        throw new BroadcastError("Subject must be one line.");
+      const { subject, body, html } = draftContent(input);
+      const list = required(input.listId, 80);
+      const id = input.id ? required(input.id, 80) : crypto.randomUUID();
       if (input.id) {
         const result = await db
           .prepare(
-            "UPDATE broadcasts SET subject=?,body=?,list_id=? WHERE id=? AND state='draft'",
+            "UPDATE broadcasts SET subject=?,body=?,body_html=?,list_id=? WHERE id=? AND state='draft'",
           )
-          .bind(subject, body, list, required(input.id, 80))
+          .bind(subject, body, html, list, id)
           .run();
         if (!result.meta.changes)
           throw new BroadcastError("Only drafts can be edited.");
       } else {
         await db
           .prepare(
-            "INSERT INTO broadcasts(id,list_id,subject,body,created_at,actor_id) VALUES(?,?,?,?,?,?)",
+            "INSERT INTO broadcasts(id,list_id,subject,body,body_html,created_at,actor_id) VALUES(?,?,?,?,?,?,?)",
           )
-          .bind(crypto.randomUUID(), list, subject, body, Date.now(), actor)
+          .bind(id, list, subject, body, html, Date.now(), actor)
           .run();
       }
+      return json({ success: true, id });
     } else if (path === "/send") {
       if (!configured(env))
         return json(
@@ -381,15 +411,17 @@ export async function runBroadcastDelivery(
     .run();
   const rows = await db
     .prepare(
-      `SELECT r.id,r.contact_id,r.email,b.subject,b.body,b.list_id FROM broadcast_recipients r
+      `SELECT r.id,r.broadcast_id,r.contact_id,r.email,b.subject,b.body,b.body_html,b.list_id FROM broadcast_recipients r
  JOIN broadcasts b ON b.id=r.broadcast_id WHERE r.state='pending' AND b.state='queued' ORDER BY b.sent_at,r.id LIMIT 10`,
     )
     .all<{
       id: string;
       contact_id: string;
+      broadcast_id: string;
       email: string;
       subject: string;
       body: string;
+      body_html: string;
       list_id: string;
     }>();
   for (const row of rows.results) {
@@ -402,11 +434,11 @@ export async function runBroadcastDelivery(
     if (!claim.meta.changes) continue;
     const eligible = await db
       .prepare(
-        `SELECT c.id FROM broadcast_contacts c JOIN broadcast_memberships m ON m.contact_id=c.id
+        `SELECT c.id,c.name FROM broadcast_contacts c JOIN broadcast_memberships m ON m.contact_id=c.id
    WHERE c.id=? AND c.tag='' AND m.list_id=? AND m.state='active'`,
       )
       .bind(row.contact_id, row.list_id)
-      .first();
+      .first<{ id: string; name: string }>();
     if (!eligible) {
       await db
         .prepare("UPDATE broadcast_recipients SET state='skipped' WHERE id=?")
@@ -419,12 +451,23 @@ export async function runBroadcastDelivery(
       const link = `${env.BROADCAST_ORIGIN}/email/preferences/${token}`;
       const oneClick = `${env.BROADCAST_ORIGIN}/email/unsubscribe/${await signedToken(env, `unsubscribe:${row.contact_id}:${row.list_id}`)}`;
       const custom = env.BROADCAST_UNSUBSCRIBE_MODE === "custom";
+      const content = emailContent(
+        row.subject,
+        row.body,
+        row.body_html,
+        eligible.name,
+      );
+      const publicLink = `${env.BROADCAST_ORIGIN}/email/messages/${row.broadcast_id}`;
       const messageId = await sendPostmarkEmail(env, {
         from: env.BROADCAST_FROM_EMAIL!,
         to: row.email,
-        subject: row.subject,
-        text: `${row.body}\n\nManage your lists or unsubscribe: ${link}${custom ? "" : "\nUnsubscribe from all Pack broadcasts: {{{ pm:unsubscribe }}}"}`,
-        html: `<div style="white-space:pre-wrap">${escape(row.body)}</div><p><a href="${escape(link)}">Manage lists or unsubscribe</a></p>${custom ? "" : '<p><a href="{{{ pm:unsubscribe }}}">Unsubscribe from all Pack broadcasts</a></p>'}`,
+        subject: content.subject,
+        text: `${content.text}\n\nView on the web: ${publicLink}\n\nManage your lists or unsubscribe: ${link}${custom ? "" : "\nUnsubscribe from all Pack broadcasts: {{{ pm:unsubscribe }}}"}`,
+        html: emailDocument(
+          content.subject,
+          content.html,
+          `<hr><p><a href="${escape(publicLink)}">View on the web</a></p><p><a href="${escape(link)}">Manage lists or unsubscribe</a></p>${custom ? "" : '<p><a href="{{{ pm:unsubscribe }}}">Unsubscribe from all Pack broadcasts</a></p>'}`,
+        ),
         stream: env.BROADCAST_STREAM!,
         metadata: { broadcastRecipient: row.id },
         ...(custom

@@ -4,13 +4,20 @@ Open `/admin/broadcasts` (Email in the CMS header). Create a named list and a
 unique lowercase signup slug, save contacts, then select a contact and one or
 more lists to add or remove. Adding requires an explicit consent attestation.
 The signup link is `/email/signup/<slug>` on the CMS domain. Public subscribers
-must check the consent box and confirm their address using a single-use link
+must pass Turnstile, check the consent box, and confirm their address using a single-use link
 that expires after 24 hours. Signup is limited by IP and confirmation emails
 are limited to one per contact per list per hour while a confirmation remains pending.
 Existing active subscribers are not sent redundant confirmation emails.
 
-Select a list, write a subject and plain-text message, and save the draft.
-Drafts can be reopened and edited. Sending presents the current subscriber
+Click a list name to edit its name or signup slug, search its contacts, or remove
+one or several memberships without deleting contacts from other lists.
+
+Select a list, write a subject and compose the message with the visual HTML
+editor. It supports headings, emphasis, colors, lists, alignment, links, and
+HTTPS-hosted images. Save draft preserves formatting and lets you reopen and
+edit the message later; New draft starts a separate message. Preview email
+shows the sanitized result at desktop or mobile width without saving or sending.
+Use `{{name}}` for the recipient’s contact name; previews use “friend”. Sending presents the current subscriber
 count and requires a deliberate confirmation. Once queued, the audience and
 message are frozen. Repeated send requests cannot duplicate recipients.
 
@@ -18,8 +25,18 @@ The statistics show recipient, provider acceptance, delivery, unique open,
 bounce, skipped, and uncertain counts. Acceptance is not delivery; delivery
 is acceptance by the receiving server, not proof of inbox placement. Open
 tracking is approximate and is affected by privacy features and image blocking.
-The body is escaped as text; arbitrary HTML is not supported. Click tracking
-is disabled, consistent with existing CMS email policy.
+HTML is sanitized on the server with a restricted formatting allowlist; scripts,
+embedded forms, unsafe URLs, and arbitrary CSS are removed. A plain-text
+alternative is generated automatically. Click tracking is disabled, consistent
+with existing CMS email policy.
+
+After the provider accepts a recipient’s message, a public HTML copy becomes
+available at `/email/messages/<campaign-UUID>`, linked from the campaign and
+from each delivered email. Drafts and campaigns with no accepted sends return
+404. The public copy uses “friend” in place of `{{name}}` and omits recipient
+addresses and subscription tokens. Text explicitly written into the message
+remains public, so review the preview before sending. Sent content is frozen.
+Public copies are excluded from search indexing.
 
 ## Access
 
@@ -33,16 +50,28 @@ inquiry submissions; neither is automatically subscribed.
 
 ## Production setup
 
-Apply the custom migration before activating the new Worker. Use the existing
+Apply custom migrations, including `0008_broadcast_html.sql`, before activating
+the new Worker. The pinned Quill editor assets are served from this Worker’s
+`public/email-editor/` directory; regenerate them with `bun run editor:assets`
+when updating Quill. No third-party CDN is needed. Use the existing
 `POSTMARK_SERVER_TOKEN` secret and configure these Worker bindings:
 
 | Binding | Value |
 | --- | --- |
+| `BROADCAST_TURNSTILE_SITE_KEY` | The existing Pack Turnstile public sitekey; the widget must allow the CMS hostname |
+| `TURNSTILE_SECRET` | Existing matching Worker secret, shared with the contact/signup integration |
 | `BROADCAST_FROM_EMAIL` | A verified Pack sender address (for example `volunteers@macon170.com`) |
 | `BROADCAST_STREAM` | The ID of a **Broadcast** Postmark message stream; never `outbound` |
 | `BROADCAST_ORIGIN` | `https://cms.macon170.com` without a trailing slash |
 | `BROADCAST_WEBHOOK_SECRET` | A new random secret, stored with Wrangler secrets |
 | `BROADCAST_UNSUBSCRIBE_MODE` | Omit or use `postmark`; use `custom` only after Postmark approval |
+
+List signup verifies Turnstile on the server with action `broadcast_signup` and
+an exact hostname match to `BROADCAST_ORIGIN`. Missing, invalid, expired, reused,
+wrong-action, and wrong-host tokens are rejected before contact writes or mail.
+Verification outages fail closed. Unsubscribe and email confirmation links
+remain usable without a CAPTCHA. The native signup form navigates after posting;
+returning to the signup page obtains a fresh token for retries.
 
 Keep `JWT_SECRET` configured: it signs public preference and confirmation
 links. Rotating it invalidates those links. The existing `SIGNUP_RATE_LIMITER`

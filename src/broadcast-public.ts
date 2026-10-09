@@ -1,4 +1,9 @@
 import {
+  BROADCAST_SIGNUP_ACTION,
+  verifyBroadcastSignup,
+} from "./broadcast-turnstile";
+import { emailContent, emailDocument } from "./broadcast-email";
+import {
   BroadcastError,
   emailAddress,
   escape,
@@ -14,17 +19,25 @@ import {
   PostmarkDeliveryError,
 } from "./postmark";
 
-export function publicPage(title: string, body: string): Response {
+export function publicPage(
+  title: string,
+  body: string,
+  options: { turnstile?: boolean; status?: number } = {},
+): Response {
   return new Response(
     `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="same-origin"><title>${escape(title)} · Pack 170</title><style>body{font:18px/1.6 system-ui;max-width:640px;margin:3rem auto;padding:1rem;color:#163452}label{display:block;margin:1rem 0}input:not([type=checkbox]),button{font:inherit;padding:.6rem;max-width:100%;box-sizing:border-box}button{background:#153956;color:white;border:0;border-radius:5px;cursor:pointer}</style><h1>${escape(title)}</h1>${body}</html>`,
     {
+      status: options.status ?? 200,
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
         "Referrer-Policy": "same-origin",
         "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy":
-          "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+          "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'" +
+          (options.turnstile
+            ? "; script-src https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src https://challenges.cloudflare.com"
+            : ""),
       },
     },
   );
@@ -38,6 +51,39 @@ export async function handleBroadcastPublic(
       path = url.pathname;
     if (!["GET", "POST"].includes(request.method))
       return json({ message: "Method not allowed." }, 405);
+    if (path.startsWith("/email/messages/")) {
+      if (request.method !== "GET")
+        return json({ message: "Method not allowed." }, 405);
+      const id = path.slice("/email/messages/".length);
+      if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          id,
+        )
+      )
+        return json({ message: "Email not found." }, 404);
+      const message = await env.DB.prepare(
+        "SELECT subject,body,body_html FROM broadcasts b WHERE id=? AND state!='draft' AND EXISTS(SELECT 1 FROM broadcast_recipients r WHERE r.broadcast_id=b.id AND r.message_id IS NOT NULL)",
+      )
+        .bind(id)
+        .first<{ subject: string; body: string; body_html: string }>();
+      if (!message) return json({ message: "Email not found." }, 404);
+      const content = emailContent(
+        message.subject,
+        message.body,
+        message.body_html,
+      );
+      return new Response(emailDocument(content.subject, content.html), {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Robots-Tag": "noindex, nofollow",
+          "Referrer-Policy": "no-referrer",
+          "X-Content-Type-Options": "nosniff",
+          "Content-Security-Policy":
+            "default-src 'none'; img-src https:; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'",
+        },
+      });
+    }
     const oneClick = path.startsWith("/email/unsubscribe/");
     if (
       request.method === "POST" &&
@@ -56,10 +102,17 @@ export async function handleBroadcastPublic(
           "List not found",
           "<p>This signup link is unavailable.</p>",
         );
+      if (!env.BROADCAST_TURNSTILE_SITE_KEY || !env.TURNSTILE_SECRET)
+        return publicPage(
+          "Signup unavailable",
+          "<p>The security check is temporarily unavailable. Please try again later.</p>",
+          { status: 503 },
+        );
       if (request.method === "GET")
         return publicPage(
           `Join ${list.name}`,
-          `<p>Receive Pack 170 updates. We will email a confirmation link before adding you to this list. You can unsubscribe at any time.</p><form method="post"><label>Your name <input name="name" maxlength="100" autocomplete="name"></label><label>Email <input type="email" name="email" required maxlength="254" autocomplete="email"></label><label><input type="checkbox" name="consent" value="yes" required> I want to receive emails from this list.</label><button>Send confirmation</button></form>`,
+          `<p>Receive Pack 170 updates. We will email a confirmation link before adding you to this list. You can unsubscribe at any time.</p><form method="post"><label>Your name <input name="name" maxlength="100" autocomplete="name"></label><label>Email <input type="email" name="email" required maxlength="254" autocomplete="email"></label><label><input type="checkbox" name="consent" value="yes" required> I want to receive emails from this list.</label><div class="cf-turnstile" data-sitekey="${escape(env.BROADCAST_TURNSTILE_SITE_KEY)}" data-action="${BROADCAST_SIGNUP_ACTION}"></div><p>The security check must complete before you submit. If it cannot load, reload this page and try again.</p><noscript><p>Please enable JavaScript to complete the security check.</p></noscript><button>Send confirmation</button></form><script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>`,
+          { turnstile: true },
         );
       if (
         !env.SIGNUP_RATE_LIMITER ||
@@ -78,6 +131,18 @@ export async function handleBroadcastPublic(
       if (input.consent !== "yes")
         throw new BroadcastError(
           "Please confirm that you want to join this list.",
+        );
+      if (
+        !(await verifyBroadcastSignup(
+          input["cf-turnstile-response"],
+          request,
+          env,
+        ))
+      )
+        return publicPage(
+          "Security check needed",
+          `<p>The security check expired or failed. Please return to the signup page and try again.</p><p><a href="${escape(path)}">Return to signup</a></p>`,
+          { status: 403 },
         );
       const name =
         typeof input.name === "string" ? input.name.slice(0, 100) : "";

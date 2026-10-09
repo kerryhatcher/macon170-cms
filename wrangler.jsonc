@@ -5,6 +5,7 @@
   "compatibility_date": "2026-07-29",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
+  "assets": { "directory": "./public" },
   "routes": [{ "pattern": "cms.macon170.com", "custom_domain": true }],
   "d1_databases": [
     {
@@ -38,6 +39,7 @@
     "SIGNUP_FROM_EMAIL": "volunteers@macon170.com",
     "SIGNUP_FROM_NAME": "Pack 170 Volunteers",
     "SIGNUP_REPLY_TO": "contact@macon170.com",
+    "BROADCAST_TURNSTILE_SITE_KEY": "0x4AAAAAAD-sr-Bk7AntxyZ7",
     "BROADCAST_FROM_EMAIL": "volunteers@macon170.com",
     "BROADCAST_STREAM": "pack-broadcasts",
     "BROADCAST_ORIGIN": "https://cms.macon170.com",

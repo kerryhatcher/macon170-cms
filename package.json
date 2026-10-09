@@ -22,18 +22,24 @@
     "test:watch": "vitest",
     "update": "npm install @sonicjs-cms/core@latest --save",
     "update:beta": "npm install @sonicjs-cms/core@beta --save",
-    "cf:types": "wrangler types src/worker-configuration.d.ts --config wrangler.jsonc"
+    "cf:types": "wrangler types src/worker-configuration.d.ts --config wrangler.jsonc",
+    "editor:assets": "bun scripts/build-email-editor-assets.mjs"
   },
   "dependencies": {
-    "@sonicjs-cms/core": "^2.19.0"
+    "@sonicjs-cms/core": "^2.19.0",
+    "html-to-text": "10.0.1",
+    "sanitize-html": "2.18.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251202.0",
+    "@types/html-to-text": "9.0.4",
     "@types/node": "^24.10.1",
+    "@types/sanitize-html": "2.16.2",
     "drizzle-kit": "^0.31.7",
     "drizzle-orm": "^0.44.7",
     "hono": "^4.10.7",
     "miniflare": "4.20260722.1",
+    "quill": "2.0.3",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.15",

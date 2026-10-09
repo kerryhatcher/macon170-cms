@@ -22,8 +22,10 @@ export function renderLoginPage(url: URL): string {
     '/admin/calendar',
     '/admin/contact-form',
     '/admin/leadership',
+    '/admin/broadcasts',
   ])
-  const returnTo = allowedReturnTo.has(requestedReturnTo ?? '')
+  const returnTo = (allowedReturnTo.has(requestedReturnTo ?? '') ||
+    /^\/admin\/broadcasts\/lists\/[a-zA-Z0-9_-]{1,80}$/.test(requestedReturnTo ?? ''))
     ? requestedReturnTo!
     : '/dash'
   const returnToJson = JSON.stringify(returnTo).replaceAll('<', '\\u003c')

@@ -17,6 +17,7 @@ import { createCmsRequestHandler } from "./request-handler";
 let sqlite: DatabaseSync;
 let env: BroadcastBindings;
 const send = vi.fn();
+const verifySignup = vi.fn();
 type Statement = { run(): Promise<unknown> };
 function adapter() {
   return {
@@ -103,7 +104,12 @@ async function publicPost(path: string, body: Record<string, string> = {}) {
         Origin: "https://cms.example",
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams(body),
+      body: new URLSearchParams({
+        ...(path.startsWith("/email/signup/")
+          ? { "cf-turnstile-response": "valid-test-token" }
+          : {}),
+        ...body,
+      }),
     }),
     env,
   );
@@ -131,6 +137,9 @@ beforeEach(() => {
   );
   sqlite.exec(migration);
   sqlite.exec(migration);
+  sqlite.exec(
+    readFileSync("migrations/custom/0008_broadcast_html.sql", "utf8"),
+  );
   sqlite.exec(`INSERT INTO broadcast_lists VALUES('list1','Pack news','pack-news',0),('list2','Den news','den-news',0);
  INSERT INTO broadcast_contacts VALUES('contact1','parent@example.test','Parent','',0);
  INSERT INTO broadcast_memberships VALUES('contact1','list1','active'),('contact1','list2','active');`);
@@ -138,6 +147,8 @@ beforeEach(() => {
     DB: adapter(),
     JWT_SECRET: "test-broadcast-secret",
     POSTMARK_SERVER_TOKEN: "test-key",
+    TURNSTILE_SECRET: "test-turnstile-secret",
+    BROADCAST_TURNSTILE_SITE_KEY: "test-site-key",
     BROADCAST_FROM_EMAIL: "pack@example.test",
     BROADCAST_STREAM: "broadcast",
     BROADCAST_UNSUBSCRIBE_MODE: "custom",
@@ -150,7 +161,18 @@ beforeEach(() => {
     .mockImplementation(async () =>
       Response.json({ ErrorCode: 0, MessageID: crypto.randomUUID() }),
     );
-  vi.stubGlobal("fetch", send);
+  verifySignup.mockReset().mockImplementation(async () =>
+    Response.json({
+      success: true,
+      action: "broadcast_signup",
+      hostname: "cms.example",
+    }),
+  );
+  vi.stubGlobal("fetch", (url: RequestInfo | URL, init?: RequestInit) =>
+    String(url).includes("/turnstile/v0/siteverify")
+      ? verifySignup(url, init)
+      : send(url, init),
+  );
 });
 afterEach(() => {
   sqlite.close();
@@ -411,6 +433,18 @@ it("enforces authentication, active accounts, explicit volunteer permissions, or
     ctx,
   );
   expect(page.status).toBe(200);
+  const editorPolicy = page.headers.get("Content-Security-Policy");
+  expect(editorPolicy).toContain("script-src 'self' 'unsafe-inline'");
+  expect(editorPolicy).toContain("style-src 'self' 'unsafe-inline'");
+  expect(editorPolicy).toContain("img-src 'self' https:;");
+  const listResponse = await handle(
+    new Request(listPage, { headers: { Authorization: "Bearer " + token } }),
+    env,
+    ctx,
+  );
+  expect(listResponse.headers.get("Content-Security-Policy")).not.toContain(
+    "img-src 'self' https:;",
+  );
   expect(
     (
       await handle(
@@ -577,5 +611,179 @@ it("list details exclude removed members without removing contacts or their othe
   expect((await (await admin("/lists/list2")).json()) as object).toMatchObject({
     contacts: [{ id: "contact1" }],
   });
+  expect(query("SELECT * FROM broadcast_contacts")).toHaveLength(1);
+});
+it("saves sanitized HTML drafts and previews without sending or publishing", async () => {
+  const content = {
+    subject: "Hello {{name}}",
+    html: "<h2>Pack news</h2><p>Hi <strong>{{name}}</strong>!</p><script>alert(1)</script>",
+    listId: "list1",
+  };
+  const preview = (await (await admin("/preview", content)).json()) as {
+    html: string;
+  };
+  expect(preview.html).toContain("<strong>friend</strong>");
+  expect(preview.html).not.toContain("<script>");
+  expect(query("SELECT * FROM broadcasts")).toHaveLength(0);
+  expect(send).not.toHaveBeenCalled();
+  const saved = (await (await admin("/drafts", content)).json()) as {
+    id: string;
+  };
+  const row = query("SELECT * FROM broadcasts")[0]!;
+  expect(row.body_html).toContain("<h2>Pack news</h2>");
+  expect(row.body_html).not.toContain("<script>");
+  expect(row.body).toContain("Pack news");
+  expect(
+    (
+      await handleBroadcastPublic(
+        new Request("https://cms.example/email/messages/" + saved.id),
+        env,
+      )
+    ).status,
+  ).toBe(404);
+  expect(
+    (
+      await admin("/drafts", {
+        ...content,
+        id: saved.id,
+        html: "<p>Updated</p>",
+      })
+    ).status,
+  ).toBe(200);
+  expect(query("SELECT * FROM broadcasts")).toHaveLength(1);
+});
+it("publishes a UUID web copy only after provider acceptance, without recipient data or management links", async () => {
+  const saved = (await (
+    await admin("/drafts", {
+      subject: "Hello {{name}}",
+      html: "<p>Welcome <strong>{{name}}</strong>.</p>",
+      listId: "list1",
+    })
+  ).json()) as { id: string };
+  expect(saved.id).toMatch(/^[0-9a-f-]{36}$/);
+  await admin("/send", { id: saved.id });
+  const url = "https://cms.example/email/messages/" + saved.id;
+  expect((await handleBroadcastPublic(new Request(url), env)).status).toBe(404);
+  await runBroadcastDelivery(env);
+  const sent = JSON.parse(send.mock.calls[0]![1].body);
+  expect(sent.HtmlBody).toContain("<strong>Parent</strong>");
+  expect(sent.Subject).toBe("Hello Parent");
+  expect(sent.HtmlBody).toContain("/email/messages/" + saved.id);
+  expect(sent.TextBody).toContain("Welcome Parent.");
+  const publicResponse = await handleBroadcastPublic(new Request(url), env);
+  expect(publicResponse.status).toBe(200);
+  const html = await publicResponse.text();
+  expect(html).toContain("<strong>friend</strong>");
+  expect(html).not.toContain("Parent");
+  expect(html).not.toContain("parent@example.test");
+  expect(html).not.toContain("/email/preferences/");
+  expect(html).not.toContain("/email/unsubscribe/");
+  expect(publicResponse.headers.get("Content-Security-Policy")).toContain(
+    "default-src 'none'",
+  );
+  expect(
+    (
+      await admin("/drafts", {
+        id: saved.id,
+        listId: "list1",
+        subject: "Changed",
+        html: "<p>Changed</p>",
+      })
+    ).status,
+  ).toBe(400);
+});
+
+it("renders Turnstile only on signup pages and fails closed before side effects", async () => {
+  const page = await handleBroadcastPublic(
+    new Request("https://cms.example/email/signup/pack-news"),
+    env,
+  );
+  expect(await page.text()).toContain('data-action="broadcast_signup"');
+  expect(page.headers.get("Content-Security-Policy")).toContain(
+    "script-src https://challenges.cloudflare.com",
+  );
+  for (const token of ["", "x".repeat(2049)]) {
+    expect(
+      (
+        await publicPost("/email/signup/pack-news", {
+          email: "blocked@example.test",
+          consent: "yes",
+          "cf-turnstile-response": token,
+        })
+      ).status,
+    ).toBe(403);
+  }
+  expect(verifySignup).not.toHaveBeenCalled();
+  expect(send).not.toHaveBeenCalled();
+  expect(query("SELECT * FROM broadcast_contacts")).toHaveLength(1);
+  delete env.TURNSTILE_SECRET;
+  expect(
+    (
+      await publicPost("/email/signup/pack-news", {
+        email: "blocked@example.test",
+        consent: "yes",
+      })
+    ).status,
+  ).toBe(503);
+});
+it("rejects invalid, replayed, wrong-host, wrong-action and unavailable Turnstile checks", async () => {
+  const body = { email: "blocked@example.test", consent: "yes" };
+  for (const result of [
+    { success: false, "error-codes": ["timeout-or-duplicate"] },
+    { success: true, hostname: "other.example", action: "broadcast_signup" },
+    { success: true, hostname: "cms.example", action: "turnstile-spin-v2" },
+    { success: "true", hostname: "cms.example", action: "broadcast_signup" },
+  ]) {
+    verifySignup.mockResolvedValueOnce(Response.json(result));
+    expect((await publicPost("/email/signup/pack-news", body)).status).toBe(
+      403,
+    );
+  }
+  verifySignup.mockResolvedValueOnce(
+    new Response("unavailable", { status: 503 }),
+  );
+  expect((await publicPost("/email/signup/pack-news", body)).status).toBe(403);
+  verifySignup.mockRejectedValueOnce(new Error("network failure"));
+  expect((await publicPost("/email/signup/pack-news", body)).status).toBe(403);
+  expect(send).not.toHaveBeenCalled();
+  expect(query("SELECT * FROM broadcast_contacts")).toHaveLength(1);
+  expect(query("SELECT * FROM broadcast_confirmations")).toHaveLength(0);
+});
+it("accepts a valid signup verification once and rejects the provider's replay result", async () => {
+  const body = {
+    email: "verified@example.test",
+    consent: "yes",
+    "cf-turnstile-response": "single-use-token",
+  };
+  expect((await publicPost("/email/signup/pack-news", body)).status).toBe(200);
+  const verificationBody = verifySignup.mock.calls[0]![1]
+    .body as URLSearchParams;
+  expect(verificationBody.get("response")).toBe("single-use-token");
+  expect(verificationBody.get("secret")).toBe("test-turnstile-secret");
+  expect(send).toHaveBeenCalledTimes(1);
+  verifySignup.mockResolvedValueOnce(
+    Response.json({ success: false, "error-codes": ["timeout-or-duplicate"] }),
+  );
+  expect((await publicPost("/email/signup/pack-news", body)).status).toBe(403);
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(query("SELECT * FROM broadcast_confirmations")).toHaveLength(1);
+});
+it("rejects malformed and oversized verification responses", async () => {
+  for (const response of [
+    new Response("not JSON"),
+    new Response("x".repeat(8193)),
+    Response.json(null),
+  ]) {
+    verifySignup.mockResolvedValueOnce(response);
+    expect(
+      (
+        await publicPost("/email/signup/pack-news", {
+          email: "blocked@example.test",
+          consent: "yes",
+        })
+      ).status,
+    ).toBe(403);
+  }
+  expect(send).not.toHaveBeenCalled();
   expect(query("SELECT * FROM broadcast_contacts")).toHaveLength(1);
 });
