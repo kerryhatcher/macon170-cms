@@ -315,19 +315,24 @@ describe("ChatGPT OAuth and MCP", () => {
       (await exchange(a.client, a.code, { code_verifier: "y".repeat(64) }))
         .status,
     ).toBe(400);
-    expect((await exchange(a.client, a.code)).status).toBe(200);
+    const tokens = await (await exchange(a.client, a.code)).json() as {access_token: string};
+    expect(tokens.access_token).toBeTruthy();
     expect((await exchange(a.client, a.code)).status).toBe(400);
+    expect((await request("/mcp", {}, {Authorization: "Bearer " + tokens.access_token})).status).toBe(401);
   });
   it("rejects reused refresh credentials and stops access on revocation or account deactivation", async () => {
-    const a = await connect();
+    let a = await connect();
     const body = new URLSearchParams({
       client_id: a.client,
       grant_type: "refresh_token",
       refresh_token: a.refresh_token,
       resource: origin + "/mcp",
     }).toString();
-    expect((await request("/oauth/mcp/token", body)).status).toBe(200);
+    const rotated = await (await request("/oauth/mcp/token", body)).json() as {access_token: string};
+    expect(rotated.access_token).toBeTruthy();
     expect((await request("/oauth/mcp/token", body)).status).toBe(400);
+    expect((await request("/mcp", {}, {Authorization: "Bearer " + rotated.access_token})).status).toBe(401);
+    a = await connect();
     db.exec("UPDATE users SET is_active=0 WHERE id='admin-mcp'");
     expect(
       (await request("/mcp", {}, { Authorization: "Bearer " + a.access_token }))
@@ -650,7 +655,7 @@ describe("ChatGPT OAuth and MCP", () => {
     await cleanMcpCredentials(env);
     expect(db.prepare("SELECT count(*) AS n FROM mcp_tokens").get()!.n).toBe(0);
     expect(
-      (await request("/oauth/mcp/register", "x".repeat(17000))).status,
+      (await request("/oauth/mcp/register", {redirect_uris: [redirect], client_name: "x".repeat(17000)})).status,
     ).toBe(400);
   });
 });

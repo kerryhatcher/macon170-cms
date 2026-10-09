@@ -34,7 +34,7 @@ Disabling or demoting an administrator immediately blocks their MCP access.
 
 Open `/admin/chatgpt` (linked from the dashboard) to revoke your connections.
 Each grant expires after 30 days; access tokens last at most one hour and refresh
-tokens rotate. Reconnect after grant expiry. OAuth supports public DCR clients,
+tokens rotate; reuse of a consumed code or refresh token revokes its connection. Reconnect after grant expiry. OAuth supports public DCR clients,
 authorization code + S256 PKCE, resource binding, issuer identification and
 revocation. Codes are single-use and expire after five minutes. Opaque access,
 refresh and authorization codes are stored only as SHA-256 hashes. DCR client

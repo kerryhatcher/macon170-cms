@@ -282,9 +282,10 @@ export async function oauthRoute(
       if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier))
         return oauthError("Invalid PKCE verifier.");
       const row = await env.DB.prepare(
-        `DELETE FROM mcp_codes WHERE hash=? AND redirect_uri=? AND challenge=? AND expires_at>? AND grant_id IN (SELECT id FROM mcp_grants WHERE client_id=? AND resource=? AND revoked_at IS NULL AND expires_at>?) RETURNING grant_id`,
+        `UPDATE mcp_codes SET used_at=? WHERE used_at IS NULL AND hash=? AND redirect_uri=? AND challenge=? AND expires_at>? AND grant_id IN (SELECT id FROM mcp_grants WHERE client_id=? AND resource=? AND revoked_at IS NULL AND expires_at>?) RETURNING grant_id`,
       )
         .bind(
+          Date.now(),
           await hash(params.get("code") ?? ""),
           params.get("redirect_uri"),
           await hash(verifier),
@@ -295,11 +296,15 @@ export async function oauthRoute(
         )
         .first<{ grant_id: string }>();
       if (row) grant = await loadGrant(env, row.grant_id);
+      else await env.DB.prepare(
+        "UPDATE mcp_grants SET revoked_at=? WHERE client_id=? AND resource=? AND id IN (SELECT grant_id FROM mcp_codes WHERE hash=? AND used_at IS NOT NULL AND redirect_uri=? AND challenge=?)",
+      ).bind(Date.now(), clientId, resource, await hash(params.get("code") ?? ""), params.get("redirect_uri"), await hash(verifier)).run();
     } else if (params.get("grant_type") === "refresh_token") {
       const row = await env.DB.prepare(
-        `DELETE FROM mcp_tokens WHERE hash=? AND kind='refresh' AND expires_at>? AND grant_id IN (SELECT id FROM mcp_grants WHERE client_id=? AND resource=? AND revoked_at IS NULL AND expires_at>?) RETURNING grant_id`,
+        `UPDATE mcp_tokens SET used_at=? WHERE used_at IS NULL AND hash=? AND kind='refresh' AND expires_at>? AND grant_id IN (SELECT id FROM mcp_grants WHERE client_id=? AND resource=? AND revoked_at IS NULL AND expires_at>?) RETURNING grant_id`,
       )
         .bind(
+          Date.now(),
           await hash(params.get("refresh_token") ?? ""),
           Date.now(),
           clientId,
@@ -308,6 +313,9 @@ export async function oauthRoute(
         )
         .first<{ grant_id: string }>();
       if (row) grant = await loadGrant(env, row.grant_id);
+      else await env.DB.prepare(
+        "UPDATE mcp_grants SET revoked_at=? WHERE client_id=? AND resource=? AND id IN (SELECT grant_id FROM mcp_tokens WHERE hash=? AND kind='refresh' AND used_at IS NOT NULL)",
+      ).bind(Date.now(), clientId, resource, await hash(params.get("refresh_token") ?? "")).run();
     }
     if (!grant || !(await activeActor(env, grant.user_id)))
       return json({ error: "invalid_grant" }, 400);
@@ -413,7 +421,7 @@ export async function tokenActor(
 export async function cleanMcpCredentials(env: McpEnv): Promise<void> {
   const now = Date.now();
   await env.DB.batch([
-    env.DB.prepare("DELETE FROM mcp_codes WHERE expires_at<?").bind(now),
+    env.DB.prepare("DELETE FROM mcp_codes WHERE used_at IS NULL AND expires_at<?").bind(now),
     env.DB.prepare("DELETE FROM mcp_tokens WHERE expires_at<?").bind(now),
     env.DB.prepare(
       "DELETE FROM mcp_grants WHERE expires_at<? OR revoked_at IS NOT NULL",

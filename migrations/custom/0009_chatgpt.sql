@@ -17,12 +17,14 @@ CREATE TABLE IF NOT EXISTS mcp_codes (
   grant_id TEXT NOT NULL REFERENCES mcp_grants(id) ON DELETE CASCADE,
   redirect_uri TEXT NOT NULL,
   challenge TEXT NOT NULL,
+  used_at INTEGER,
   expires_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS mcp_tokens (
   hash TEXT PRIMARY KEY,
   grant_id TEXT NOT NULL REFERENCES mcp_grants(id) ON DELETE CASCADE,
   kind TEXT NOT NULL CHECK(kind IN ('access','refresh')),
+  used_at INTEGER,
   expires_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS mcp_tokens_grant ON mcp_tokens(grant_id);
