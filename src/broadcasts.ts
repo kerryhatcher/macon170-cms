@@ -159,6 +159,21 @@ export async function handleBroadcastAdmin(
   try {
     const path = new URL(request.url).pathname.slice(BROADCAST_API.length);
     const db = env.DB;
+    if (request.method === "GET" && path.startsWith("/lists/")) {
+      const id = path.slice("/lists/".length);
+      const list = await db
+        .prepare("SELECT * FROM broadcast_lists WHERE id=?")
+        .bind(id)
+        .first();
+      if (!list) return json({ message: "List not found." }, 404);
+      const contacts = await db
+        .prepare(
+          "SELECT c.* FROM broadcast_contacts c JOIN broadcast_memberships m ON m.contact_id=c.id WHERE m.list_id=? AND m.state='active' ORDER BY c.email",
+        )
+        .bind(id)
+        .all();
+      return json({ list, contacts: contacts.results });
+    }
     if (request.method === "GET" && path === "") {
       const [lists, contacts, memberships, campaigns] = await Promise.all([
         db
@@ -200,12 +215,20 @@ export async function handleBroadcastAdmin(
         throw new BroadcastError(
           "Use lowercase letters, numbers and hyphens for the signup slug.",
         );
-      await db
-        .prepare(
-          "INSERT INTO broadcast_lists(id,name,slug,created_at) VALUES(?,?,?,?)",
-        )
-        .bind(crypto.randomUUID(), name, slug, Date.now())
-        .run();
+      if (input.id) {
+        const result = await db
+          .prepare("UPDATE broadcast_lists SET name=?,slug=? WHERE id=?")
+          .bind(name, slug, required(input.id, 80))
+          .run();
+        if (!result.meta.changes)
+          return json({ message: "List not found." }, 404);
+      } else
+        await db
+          .prepare(
+            "INSERT INTO broadcast_lists(id,name,slug,created_at) VALUES(?,?,?,?)",
+          )
+          .bind(crypto.randomUUID(), name, slug, Date.now())
+          .run();
     } else if (path === "/contacts") {
       const email = emailAddress(input.email),
         name =

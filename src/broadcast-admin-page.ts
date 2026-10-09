@@ -97,7 +97,10 @@ async function load() {
   const selected = $("draft-list").value;
   $("draft-list").replaceChildren(option("", "Choose a list"));
   data.lists.forEach((l) => {
-    const p = node("p", l.name + " · " + l.members + " subscribers · ");
+    const p = node("p", "");
+    const name = node("a", l.name);
+    name.href = "/admin/broadcasts/lists/" + encodeURIComponent(l.id);
+    p.append(name, document.createTextNode(" · " + l.members + " subscribers · "));
     const link = node("a", "Signup page");
     link.href = "/email/signup/" + encodeURIComponent(l.slug);
     link.target = "_blank";
