@@ -358,6 +358,8 @@ it("enforces authentication, active accounts, explicit volunteer permissions, or
     (await handle(new Request("https://cms.example" + BROADCAST_API), env, ctx))
       .status,
   ).toBe(401);
+  const listPage = "https://cms.example/admin/broadcasts/lists/list1";
+  expect((await handle(new Request(listPage), env, ctx)).status).toBe(302);
   for (const [user, role, status] of [
     ["admin", "admin", 200],
     ["volunteer", "editor", 403],
@@ -369,6 +371,17 @@ it("enforces authentication, active accounts, explicit volunteer permissions, or
       role!,
       env.JWT_SECRET!,
     );
+    expect(
+      (
+        await handle(
+          new Request(listPage, {
+            headers: { Authorization: "Bearer " + token },
+          }),
+          env,
+          ctx,
+        )
+      ).status,
+    ).toBe(status);
     expect(
       (
         await handle(
@@ -523,4 +536,46 @@ it("allows confirmation retries after a definitive rejection but keeps ambiguous
   expect((await publicPost("/email/signup/den-news", body)).status).toBe(503);
   await publicPost("/email/signup/den-news", body);
   expect(send).toHaveBeenCalledTimes(3);
+});
+it("edits a list without changing memberships and rejects invalid or duplicate slugs", async () => {
+  expect(
+    (
+      await admin("/lists", {
+        id: "list1",
+        name: "Announcements",
+        slug: "announcements",
+      })
+    ).status,
+  ).toBe(200);
+  expect((await (await admin("/lists/list1")).json()) as object).toMatchObject({
+    list: { id: "list1", name: "Announcements", slug: "announcements" },
+    contacts: [{ id: "contact1" }],
+  });
+  expect(query("SELECT * FROM broadcast_memberships")).toHaveLength(2);
+  expect(
+    (await admin("/lists", { id: "list1", name: "Bad", slug: "den-news" }))
+      .status,
+  ).toBe(409);
+  expect(
+    (await admin("/lists", { id: "list1", name: "Bad", slug: "UPPER" })).status,
+  ).toBe(400);
+  expect(
+    (await admin("/lists", { id: "missing", name: "Missing", slug: "missing" }))
+      .status,
+  ).toBe(404);
+  expect((await admin("/lists/missing")).status).toBe(404);
+});
+it("list details exclude removed members without removing contacts or their other lists", async () => {
+  await admin("/memberships", {
+    contactId: "contact1",
+    listIds: ["list1"],
+    action: "remove",
+  });
+  expect((await (await admin("/lists/list1")).json()) as object).toMatchObject({
+    contacts: [],
+  });
+  expect((await (await admin("/lists/list2")).json()) as object).toMatchObject({
+    contacts: [{ id: "contact1" }],
+  });
+  expect(query("SELECT * FROM broadcast_contacts")).toHaveLength(1);
 });
