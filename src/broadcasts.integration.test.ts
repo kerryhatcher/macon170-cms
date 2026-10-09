@@ -503,3 +503,24 @@ it("reserves only one confirmation email across concurrent public signup request
   expect(send).toHaveBeenCalledTimes(1);
   expect(query("SELECT * FROM broadcast_confirmations")).toHaveLength(1);
 });
+
+it("confirms separate public list signups independently within the same hour", async () => {
+  const body = { email: "new@example.test", consent: "yes" };
+  await publicPost("/email/signup/pack-news", body);
+  await publicPost("/email/signup/den-news", body);
+  expect(send).toHaveBeenCalledTimes(2);
+  expect(query("SELECT * FROM broadcast_confirmations")).toHaveLength(2);
+});
+
+it("allows confirmation retries after a definitive rejection but keeps ambiguous reservations", async () => {
+  const body = { email: "new@example.test", consent: "yes" };
+  send.mockResolvedValueOnce(new Response("Rejected", { status: 422 }));
+  expect((await publicPost("/email/signup/pack-news", body)).status).toBe(503);
+  expect(query("SELECT * FROM broadcast_confirmations")).toHaveLength(0);
+  expect((await publicPost("/email/signup/pack-news", body)).status).toBe(200);
+  expect(send).toHaveBeenCalledTimes(2);
+  send.mockRejectedValueOnce(new Error("timeout"));
+  expect((await publicPost("/email/signup/den-news", body)).status).toBe(503);
+  await publicPost("/email/signup/den-news", body);
+  expect(send).toHaveBeenCalledTimes(3);
+});

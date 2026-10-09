@@ -6,7 +6,7 @@ more lists to add or remove. Adding requires an explicit consent attestation.
 The signup link is `/email/signup/<slug>` on the CMS domain. Public subscribers
 must check the consent box and confirm their address using a single-use link
 that expires after 24 hours. Signup is limited by IP and confirmation emails
-are limited to one per contact per hour while a confirmation remains pending.
+are limited to one per contact per list per hour while a confirmation remains pending.
 Existing active subscribers are not sent redundant confirmation emails.
 
 Select a list, write a subject and plain-text message, and save the draft.

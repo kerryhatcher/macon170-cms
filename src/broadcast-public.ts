@@ -8,7 +8,11 @@ import {
   verifyToken,
   type BroadcastBindings,
 } from "./broadcasts";
-import { sendPostmarkEmail, isPostmarkConfigured } from "./postmark";
+import {
+  sendPostmarkEmail,
+  isPostmarkConfigured,
+  PostmarkDeliveryError,
+} from "./postmark";
 
 export function publicPage(title: string, body: string): Response {
   return new Response(
@@ -90,9 +94,9 @@ export async function handleBroadcastPublic(
       const recent =
         contact &&
         (await env.DB.prepare(
-          "SELECT id FROM broadcast_confirmations WHERE contact_id=? AND expires_at>? LIMIT 1",
+          "SELECT id FROM broadcast_confirmations WHERE contact_id=? AND list_id=? AND expires_at>? LIMIT 1",
         )
-          .bind(contact.id, Date.now() + 23 * 3600000)
+          .bind(contact.id, list.id, Date.now() + 23 * 3600000)
           .first());
       const member =
         contact &&
@@ -107,7 +111,7 @@ export async function handleBroadcastPublic(
         const reservation = await env.DB.prepare(
           `INSERT INTO broadcast_confirmations(id,contact_id,list_id,expires_at)
            SELECT ?,?,?,? WHERE NOT EXISTS (
-             SELECT 1 FROM broadcast_confirmations WHERE contact_id=? AND expires_at>?
+             SELECT 1 FROM broadcast_confirmations WHERE contact_id=? AND list_id=? AND expires_at>?
            )`,
         )
           .bind(
@@ -116,6 +120,7 @@ export async function handleBroadcastPublic(
             list.id,
             Date.now() + 86400000,
             contact.id,
+            list.id,
             Date.now() + 23 * 3600000,
           )
           .run();
@@ -126,13 +131,30 @@ export async function handleBroadcastPublic(
           );
         const token = await signedToken(env, `confirm:${confirmation}`);
         const link = `${env.BROADCAST_ORIGIN}/email/confirm/${token}`;
-        await sendPostmarkEmail(env, {
-          from: env.BROADCAST_FROM_EMAIL,
-          to: email,
-          subject: `Confirm your Pack 170 subscription`,
-          text: `Confirm your subscription to ${list.name}: ${link}\nThis link expires in 24 hours. Ignore this message if you did not request it.`,
-          html: `<p>Confirm your subscription to ${escape(list.name)}.</p><p><a href="${escape(link)}">Confirm subscription</a></p><p>This link expires in 24 hours. Ignore it if you did not request it.</p>`,
-        });
+        try {
+          await sendPostmarkEmail(env, {
+            from: env.BROADCAST_FROM_EMAIL,
+            to: email,
+            subject: `Confirm your Pack 170 subscription`,
+            text: `Confirm your subscription to ${list.name}: ${link}\nThis link expires in 24 hours. Ignore this message if you did not request it.`,
+            html: `<p>Confirm your subscription to ${escape(list.name)}.</p><p><a href="${escape(link)}">Confirm subscription</a></p><p>This link expires in 24 hours. Ignore it if you did not request it.</p>`,
+          });
+        } catch (error) {
+          if (
+            error instanceof PostmarkDeliveryError &&
+            error.status !== undefined &&
+            error.status >= 400 &&
+            error.status < 500 &&
+            error.status !== 408
+          ) {
+            await env.DB.prepare(
+              "DELETE FROM broadcast_confirmations WHERE id=?",
+            )
+              .bind(confirmation)
+              .run();
+          }
+          throw error;
+        }
       }
       return publicPage(
         "Check your email",
