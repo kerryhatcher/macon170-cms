@@ -2,7 +2,8 @@
 
 The saved private plugin is [Pack 170](https://chatgpt.com/plugins/plugins_6ac97b8340a88191a80b8dfd27c0bb08).
 Its plugin ID is `plugins_6ac97b8340a88191a80b8dfd27c0bb08`; the initial release is
-`pluginrel_6ac97b83d7a48191a837ac7785790531`. Preserve this identity for future updates.
+`pluginrel_6ac97b83d7a48191a837ac7785790531`. Version 1.0.1 is saved as
+`pluginrel_6ac97c69e7688191ad611d63a015972a`. Preserve the plugin identity for future updates.
 
 The private plugin source is in `plugins/macon170`. The CMS hosts its Streamable
 HTTP MCP endpoint at `https://cms.macon170.com/mcp`. It exposes 31 tools covering

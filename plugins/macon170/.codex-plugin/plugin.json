@@ -1,0 +1,27 @@
+{
+  "interface": {
+    "displayName": "Pack 170",
+    "shortDescription": "Manage Pack 170",
+    "longDescription": "Connect your Pack 170 CMS administrator account to manage events, leadership, family signups, parent inquiries, mailing lists, email drafts, broadcasts and volunteer invitations. Uses your CMS permissions and provides revocable connections.",
+    "developerName": "Kerry Hatcher",
+    "category": "Productivity",
+    "logo": "./assets/icon.svg",
+    "composerIcon": "./assets/icon.svg",
+    "defaultPrompt": [
+      "Help me manage Pack 170's calendar.",
+      "Review the current leadership roster.",
+      "Draft a Pack update for our mailing list."
+    ],
+    "capabilities": []
+  },
+  "name": "macon170",
+  "version": "1.0.1",
+  "description": "Manage Pack 170 calendar, leadership, signups, parent inquiries, mailing lists, email broadcasts and volunteer invitations through the CMS.",
+  "author": {
+    "name": "Kerry Hatcher",
+    "email": "kerry@kerryhatcher.com"
+  },
+  "keywords": [],
+  "skills": "./skills",
+  "mcpServers": "./.mcp.json"
+}

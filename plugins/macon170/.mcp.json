@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "macon170": {
+      "type": "streamable-http",
+      "url": "https://cms.macon170.com/mcp",
+      "headers": {}
+    }
+  }
+}
