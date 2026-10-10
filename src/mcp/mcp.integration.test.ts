@@ -70,6 +70,7 @@ async function authorize(scope = "cms:read cms:write cms:send") {
   const path = "/oauth/mcp/authorize?" + params;
   const page = await request(path, undefined, { Cookie: browser });
   expect(page.status).toBe(200);
+  expect(page.headers.get("Referrer-Policy")).toBe("same-origin");
   const csrfCookie = page.headers.get("Set-Cookie")!.split(";")[0]!;
   const csrf = decodeURIComponent(csrfCookie.slice("csrf_token=".length));
   const form = new URLSearchParams(params);
@@ -671,3 +672,33 @@ describe("ChatGPT OAuth and MCP", () => {
     ).toBe(400);
   });
 });
+
+  it.skipIf(!process.env.MCP_BROWSER_MODULE).each(["https://oauth-client.example/callback", "http://127.0.0.1:45511/callback"])("browser consent completes through %s", async (callbackUri) => {
+    const { chromium } = await import(/* @vite-ignore */ process.env.MCP_BROWSER_MODULE!);
+    const browserEngine = await chromium.launch({headless:true, executablePath:process.env.MCP_BROWSER_EXECUTABLE});
+    try {
+      const context = await browserEngine.newContext();
+      await context.addCookies([{name:"auth_token", value:browser.slice("auth_token=".length), url:origin, secure:true}]);
+      let postOrigin = "", callback = "";
+      await context.route("**/*", async (intercept: any) => {
+        const req = intercept.request();
+        if (!req.url().startsWith(origin + "/")) {await intercept.fulfill({status:200,body:"Connected"});return;}
+        if(req.method()==="POST") postOrigin=(await req.allHeaders()).origin;
+        const res = await route(new Request(req.url(),{method:req.method(),headers:await req.allHeaders(),...(req.method()==="POST"?{body:req.postData()}: {})}));
+        
+        await intercept.fulfill({status:res.status,headers:Object.fromEntries(res.headers),body:await res.text()});
+      });
+      const registration = await request("/oauth/mcp/register", {redirect_uris:[callbackUri], client_name:"Browser regression"});
+      const client = ((await registration.json()) as {client_id:string}).client_id;
+      const params = new URLSearchParams({client_id:client,redirect_uri:callbackUri,response_type:"code",resource:origin+"/mcp",scope:"cms:read",state:"browser-test",code_challenge_method:"S256",code_challenge:await hash(verifier)});
+      const page = await context.newPage();
+      page.on("request", (req: any) => { if(req.url().startsWith(callbackUri + "?")) callback=req.url(); });
+      await page.goto(origin+"/oauth/mcp/authorize?"+params);
+      await page.getByRole("button", {name:"Allow connection"}).click();
+      await page.waitForLoadState();
+      expect(postOrigin).toBe(origin);
+      expect(callback).toContain(callbackUri+"?");
+      const code = new URL(callback).searchParams.get("code")!;
+      expect((await exchange(client,code,{redirect_uri:callbackUri})).status).toBe(200);
+    } finally {await browserEngine.close();}
+  }, 20000);

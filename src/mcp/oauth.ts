@@ -228,6 +228,7 @@ export async function oauthRoute(
             .join(
               "",
             )}${hidden("csrf_token", csrf)}<ul>${requested.map((s) => `<li>${esc({ "cms:read": "Read calendar, leadership, inquiries, signup responses, mailing lists and invitations.", "cms:write": "Create, edit, publish and delete Pack records and change list memberships.", "cms:send": "Queue email broadcasts and send or resend volunteer and signup emails." }[s]!)}</li>`).join("")}</ul><button name="decision" value="allow">Allow connection</button> <button name="decision" value="deny">Cancel</button></form>`,
+        redirect,
       );
     if (!(await csrfForm(request, env, params)))
       return oauthError("Security token rejected.", 403);

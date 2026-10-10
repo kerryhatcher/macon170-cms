@@ -120,6 +120,7 @@ export async function page(
   env: McpEnv,
   title: string,
   body: (csrf: string) => string,
+  oauthRedirect?: string,
 ): Promise<Response> {
   const csrf = await generateCsrfToken(env.JWT_SECRET);
   return new Response(
@@ -128,9 +129,10 @@ export async function page(
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
-        "Referrer-Policy": "no-referrer",
+        // Preserve Origin on same-origin form POSTs; suppress cross-origin referrers.
+        "Referrer-Policy": "same-origin",
         "Content-Security-Policy":
-          "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+          `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'${oauthRedirect ? " " + new URL(oauthRedirect).origin : ""}; frame-ancestors 'none'; base-uri 'none'`,
         "X-Content-Type-Options": "nosniff",
         "Set-Cookie": `csrf_token=${encodeURIComponent(csrf)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=3600`,
       },
