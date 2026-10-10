@@ -107,3 +107,17 @@ Package `plugins/macon170` as the sole root directory in a ZIP and upload it
 through Plugin Creator. A saved plugin does not deploy the CMS or authenticate
 the user. The release is usable only after the migration and Worker are deployed
 and the user completes the CMS consent flow.
+
+### Browser consent regression
+
+The consent page uses `Referrer-Policy: same-origin` so browser form submissions
+retain their Origin. Its CSP allows form redirects only to the validated OAuth
+callback origin. Consent still requires the CMS Origin and matching signed CSRF
+cookie/form tokens. Do not replace the page policy with `no-referrer`: browsers
+then submit `Origin: null`, which the CSRF checks reject.
+
+For the optional real-browser regression cases, set `MCP_BROWSER_MODULE` to an
+installed Playwright module and `MCP_BROWSER_EXECUTABLE` to its Chromium binary,
+then run `bunx vitest run src/mcp/mcp.integration.test.ts -t 'browser consent'`.
+These exercise consent, cookies, HTTPS and loopback callbacks, and code exchange
+against the isolated test CMS. Ordinary CI runs the remaining integration tests.
