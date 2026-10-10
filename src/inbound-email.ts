@@ -2,7 +2,7 @@ import type { Bindings } from "@sonicjs-cms/core";
 import { timingSafeEqual } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { convert } from "html-to-text";
-import { json, readInput } from "./broadcasts";
+import { BroadcastError, json, readInput } from "./broadcasts";
 
 export type InboundBindings = Bindings &
   Pick<Env, "INBOUND_BUCKET"> & {
@@ -349,7 +349,8 @@ export async function handleInboxAdmin(
     }
     return json({ message: "Method not allowed." }, 405);
   } catch (e) {
-    if (e instanceof InputError) return json({ message: e.message }, 400);
+    if (e instanceof InputError || e instanceof BroadcastError)
+      return json({ message: e.message }, 400);
     console.error(JSON.stringify({ event: "inbox_request_failed" }));
     return json({ message: "Inbox unavailable." }, 503);
   }

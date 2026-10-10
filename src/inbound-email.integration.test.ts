@@ -255,6 +255,30 @@ it("does not acknowledge storage failures and handles declared and streamed size
     env,
   );
   expect(response.status).toBe(422);
+  let chunks = 0;
+  const streamed = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (++chunks > 21) controller.close();
+      else controller.enqueue(new Uint8Array(1024 * 1024));
+    },
+  });
+  const streamInit = {
+    method: "POST",
+    duplex: "half",
+    headers: {
+      Authorization: "Basic " + btoa("postmark:secret"),
+      "Content-Type": "application/json",
+    },
+    body: streamed,
+  };
+  expect(
+    (
+      await handleInboundWebhook(
+        new Request("https://cms.example/api/inbound-webhook", streamInit),
+        env,
+      )
+    ).status,
+  ).toBe(422);
   expect(() =>
     parseInbound(
       payload({
@@ -341,4 +365,21 @@ it("renders accessible inbox controls without interpolating message content into
   expect(page).toContain("From address");
   expect(page).toContain("textContent=data.content.text");
   expect(page).not.toContain('content="<unsafe>"');
+});
+
+it("rejects malformed review JSON with a client error instead of a storage error", async () => {
+  await webhook();
+  const response = await handleInboxAdmin(
+    new Request("https://cms.example/api/inbox/v1/" + id, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: "{",
+    }),
+    env,
+    "admin",
+  );
+  expect(response.status).toBe(400);
+  expect(
+    db.prepare("SELECT revision FROM inbound_emails").get()!.revision,
+  ).toBe(0);
 });
