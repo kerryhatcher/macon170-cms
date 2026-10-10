@@ -86,7 +86,6 @@ Apply these steps in order, after validating the code:
    set the inbound webhook URL to
    `https://postmark:YOUR_SECRET@cms.macon170.com/api/inbound-webhook`.
    Disable **Include raw email content**; attachments are already included.
-   Set **Inbound domain forwarding** to `macon170.com`.
    Do not use the outbound events Webhooks API to configure inbound delivery.
 5. Post an authenticated synthetic inbound payload with a unique MessageID,
    `MessageStream: "inbound"`, and
@@ -97,7 +96,12 @@ Apply these steps in order, after validating the code:
    October 9, 2026, the two existing MX records point to `mxa.mailgun.org` and
    `mxb.mailgun.org`, both priority 10. Keep their original values for rollback;
    retaining them alongside Postmark can split inbound delivery.
-7. Send a real email from outside the domain to a new address such as
+7. Immediately set **Inbound domain forwarding** to `macon170.com` in the
+   Postmark stream settings and save. Postmark verifies the MX record when
+   saving, so this step must follow the DNS change. Confirm the domain is saved
+   before sending the real test. If verification fails, restore the old MX
+   records while resolving the issue.
+8. Send a real email from outside the domain to a new address such as
    `inbox-test@macon170.com`. Verify Postmark processed it, the CMS lists it,
    the attachment downloads correctly and a duplicate delivery creates no
    second record. Also test `contact@macon170.com` and a known contact sender.
