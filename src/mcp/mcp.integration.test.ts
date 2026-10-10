@@ -271,6 +271,18 @@ describe("ChatGPT OAuth and MCP", () => {
       });
     const res = await request("/oauth/mcp/authorize?" + params);
     expect(res.status).toBe(302);
+    for (const incomingOrigin of ["null", "https://external-client.example"]) {
+      expect((await request("/oauth/mcp/authorize?" + params, undefined, {
+        Origin: incomingOrigin,
+      })).status).toBe(302);
+      expect((await request("/oauth/mcp/authorize?" + params, undefined, {
+        Origin: incomingOrigin, Cookie: browser,
+      })).status).toBe(200);
+      expect((await request("/oauth/mcp/authorize", params.toString(), {
+        Origin: incomingOrigin, Cookie: browser,
+      })).status).toBe(403);
+      expect((await request("/mcp", {}, {Origin: incomingOrigin})).status).toBe(403);
+    }
     const login = new URL(res.headers.get("Location")!);
     expect(renderLoginPage(login)).toContain("/oauth/mcp/authorize?");
     expect(

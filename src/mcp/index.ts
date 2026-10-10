@@ -15,7 +15,12 @@ export async function handleMcp(
   if (url.origin !== env.MCP_ORIGIN)
     return json({ error: "Invalid host." }, 403);
   const origin = request.headers.get("Origin");
-  if (origin && origin !== env.MCP_ORIGIN && origin !== "https://chatgpt.com")
+  // The authorization page is a browser navigation from an external OAuth
+  // client. Its GET may carry a foreign or opaque Origin. Consent POSTs still
+  // require the CMS origin and CSRF token; MCP requests keep origin validation.
+  const authorizationNavigation =
+    request.method === "GET" && url.pathname === "/oauth/mcp/authorize";
+  if (!authorizationNavigation && origin && origin !== env.MCP_ORIGIN && origin !== "https://chatgpt.com")
     return json({ error: "Invalid origin." }, 403);
   try {
     if (
