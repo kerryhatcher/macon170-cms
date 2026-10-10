@@ -10,7 +10,8 @@ export type AdminPage =
   | "contact-form"
   | "calendar"
   | "signups"
-  | "broadcasts";
+  | "broadcasts"
+  | "inbox";
 
 export function renderAdminHeader(currentPage: AdminPage): string {
   const links: Array<{ href: string; label: string; page: AdminPage }> = [
@@ -20,6 +21,7 @@ export function renderAdminHeader(currentPage: AdminPage): string {
     { href: "/admin/calendar", label: "Calendar", page: "calendar" },
     { href: "/admin/signups", label: "Signups", page: "signups" },
     { href: "/admin/broadcasts", label: "Email", page: "broadcasts" },
+    { href: "/admin/inbox", label: "Inbox", page: "inbox" },
   ];
 
   const navItems = links

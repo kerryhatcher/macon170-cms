@@ -24,3 +24,6 @@ BROADCAST_TURNSTILE_SITE_KEY=1x00000000000000000000AA
 
 # Match the externally reachable Worker origin when testing ChatGPT locally.
 MCP_ORIGIN=http://localhost:41772
+
+# Inbound webhook Basic auth username is postmark. Use a random hex password.
+# INBOUND_WEBHOOK_SECRET=replace-with-a-random-local-secret

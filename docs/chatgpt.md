@@ -2,13 +2,13 @@
 
 The saved private plugin is [Pack 170](https://chatgpt.com/plugins/plugins_6ac97b8340a88191a80b8dfd27c0bb08).
 Its plugin ID is `plugins_6ac97b8340a88191a80b8dfd27c0bb08`; the initial release is
-`pluginrel_6ac97b83d7a48191a837ac7785790531`. Version 1.0.2 is saved as
-`pluginrel_6ac97d4819188191b716b4d9507e9178`. Preserve the plugin identity for future updates.
+`pluginrel_6ac97b83d7a48191a837ac7785790531`. Version 1.0.3 is saved as
+`pluginrel_6ac99449d07c819195fb8816a652e785`. Preserve the plugin identity for future updates.
 
 The private plugin source is in `plugins/macon170`. The CMS hosts its Streamable
-HTTP MCP endpoint at `https://cms.macon170.com/mcp`. It exposes 31 tools covering
+HTTP MCP endpoint at `https://cms.macon170.com/mcp`. It exposes 35 tools covering
 Pack calendar events, leadership roles, RSVP/item signups, private parent
-inquiries, mailing lists and contacts, rich email drafts, sanitized previews and broadcast queuing,
+inquiries, mailing lists and contacts, rich email drafts, sanitized previews and broadcast queuing, inbound email review and contact history,
 statistics, and volunteer invitations. It uses existing CMS handlers rather
 than an alternate content store or direct email provider access.
 
@@ -121,3 +121,5 @@ installed Playwright module and `MCP_BROWSER_EXECUTABLE` to its Chromium binary,
 then run `bunx vitest run src/mcp/mcp.integration.test.ts -t 'browser consent'`.
 These exercise consent, cookies, HTTPS and loopback callbacks, and code exchange
 against the isolated test CMS. Ordinary CI runs the remaining integration tests.
+
+Inbound inbox tools and activation are documented in [inbound email](inbound-email.md).

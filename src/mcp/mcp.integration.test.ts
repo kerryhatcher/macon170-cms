@@ -373,7 +373,7 @@ describe("ChatGPT OAuth and MCP", () => {
     });
     expect(initialized.error).toBeUndefined();
     const tools = (await rpc(a.access_token, "tools/list")).result.tools;
-    expect(tools.length).toBe(31);
+    expect(tools.length).toBe(35);
     expect(
       tools.find((t) => t.name === "send_email_broadcast")?.annotations,
     ).toMatchObject({ readOnlyHint: false, openWorldHint: true });
@@ -386,6 +386,83 @@ describe("ChatGPT OAuth and MCP", () => {
     expect(
       db.prepare("SELECT count(*) AS n FROM calendar_events").get()!.n,
     ).toBe(0);
+  });
+  it("supports inbound email filtering, contact history and revisioned review with scope and permission checks", async () => {
+    const messageId = "12345678-1234-4321-8321-123456789012";
+    db.prepare(
+      "INSERT INTO broadcast_contacts(id,email,name,created_at) VALUES('inbox-contact','parent@example.test','Parent',0)",
+    ).run();
+    db.prepare(
+      "INSERT INTO inbound_emails(id,sender,sender_name,recipient,subject,sent_at,received_at) VALUES(?,?,?,?,?,?,?)",
+    ).run(
+      messageId,
+      "parent@example.test",
+      "Parent",
+      "contact@macon170.com",
+      "Question",
+      "today",
+      Date.now(),
+    );
+    Object.assign(env, {
+      INBOUND_BUCKET: {
+        async get() {
+          return {
+            async json() {
+              return {
+                TextBody: "Private message",
+                To: "contact@macon170.com",
+                Attachments: [],
+              };
+            },
+          };
+        },
+      },
+    });
+    const read = await connect("cms:read"),
+      write = await connect("cms:read cms:write");
+    const list = await tool(read.access_token, "list_inbound_emails", {
+      status: "new",
+      recipient: "contact@macon170.com",
+      sort: "sender",
+      direction: "asc",
+    });
+    expect(list.isError).toBe(false);
+    expect(JSON.parse(list.content[0]!.text).data.emails[0].id).toBe(messageId);
+    const history = await tool(
+      read.access_token,
+      "list_contact_inbound_emails",
+      { contactId: "inbox-contact" },
+    );
+    expect(JSON.parse(history.content[0]!.text).data.contact.name).toBe(
+      "Parent",
+    );
+    const detail = await tool(read.access_token, "get_inbound_email", {
+      id: messageId,
+    });
+    expect(JSON.parse(detail.content[0]!.text).data.content.text).toBe(
+      "Private message",
+    );
+    const change = { id: messageId, status: "reviewed", expectedRevision: 0 };
+    expect(
+      (await tool(read.access_token, "update_inbound_email_status", change))
+        .isError,
+    ).toBe(true);
+    expect(
+      (await tool(write.access_token, "update_inbound_email_status", change))
+        .isError,
+    ).toBe(false);
+    expect(
+      (await tool(write.access_token, "update_inbound_email_status", change))
+        .isError,
+    ).toBe(true);
+    db.prepare(
+      "DELETE FROM role_permissions WHERE permission_id='perm_inbox_manage'",
+    ).run();
+    expect(
+      (await tool(read.access_token, "get_inbound_email", { id: messageId }))
+        .isError,
+    ).toBe(true);
+    expect(send).not.toHaveBeenCalled();
   });
   it("uses real calendar handlers, preserves revisions and enforces live CMS permissions", async () => {
     const a = await connect();

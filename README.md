@@ -250,3 +250,11 @@ The Pack 170 private plugin exposes the Pack management workflows through the
 authenticated `/mcp` endpoint. See [connection, permissions and rollout](docs/chatgpt.md).
 Plugin source is in `plugins/macon170`; administrators can revoke access at
 `/admin/chatgpt`.
+
+## Incoming email
+
+Use `/admin/inbox` to review incoming Postmark email, filter and sort messages,
+download private attachments, and open each known contact’s email history.
+Volunteers require `inbox.manage`. The catch-all `*@macon170.com` setup requires
+a private R2 bucket, inbound webhook secret and Postmark/DNS activation. See
+[setup and operations](docs/inbound-email.md). The inbox does not send replies.
