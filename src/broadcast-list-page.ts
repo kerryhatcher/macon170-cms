@@ -40,7 +40,7 @@ function render() {
     const row = document.createElement('tr'), cell = document.createElement('td'), check = document.createElement('input');
     check.type = 'checkbox'; check.checked = selected.has(c.id); check.disabled = busy; check.setAttribute('aria-label', 'Select ' + c.email);
     check.onchange = () => { check.checked ? selected.add(c.id) : selected.delete(c.id); selection(); };
-    cell.append(check); row.append(cell, node('td', c.name || '—'));
+    cell.append(check); row.append(cell); const nameCell=node('td',''), contactLink=node('a',c.name || c.email); contactLink.href='/admin/inbox?contactId='+encodeURIComponent(c.id); nameCell.append(contactLink); row.append(nameCell);
     const email = node('td', c.email); email.className = 'email'; row.append(email, node('td', c.tag || 'Subscribed'));
     const actions = document.createElement('td'), remove = node('button','Remove'); remove.type = 'button'; remove.disabled = busy; remove.setAttribute('aria-label','Remove ' + c.email); remove.onclick = () => removeContacts([c.id]); actions.append(remove); row.append(actions); $('contacts').append(row);
   });

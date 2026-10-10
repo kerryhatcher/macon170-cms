@@ -15,7 +15,10 @@
       "migrations_dir": "./node_modules/@sonicjs-cms/core/migrations"
     }
   ],
-  "r2_buckets": [{ "binding": "MEDIA_BUCKET", "bucket_name": "macon170-cms-media" }],
+  "r2_buckets": [
+    { "binding": "MEDIA_BUCKET", "bucket_name": "macon170-cms-media" },
+    { "binding": "INBOUND_BUCKET", "bucket_name": "macon170-cms-inbound" }
+  ],
   "ratelimits": [
     { "name": "MCP_RATE_LIMITER", "namespace_id": "17006", "simple": { "limit": 120, "period": 60 } },
     {
@@ -50,7 +53,7 @@
     "TURNSTILE_EXPECTED_HOSTNAMES": "macon170.com,www.macon170.com"
   },
   // TURNSTILE_SECRET, POSTMARK_SERVER_TOKEN, BROADCAST_WEBHOOK_SECRET, and the rollout
-  // toggle SIGNUP_REQUIRE_PHONE are Worker secrets.
+  // toggle SIGNUP_REQUIRE_PHONE and INBOUND_WEBHOOK_SECRET are Worker secrets.
   "triggers": { "crons": ["17 3 * * *", "* * * * *"] },
   "observability": {
     "enabled": true,

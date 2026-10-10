@@ -1,3 +1,5 @@
+import { INBOX_API, handleInboxAdmin, handleInboundWebhook, type InboundBindings } from "./inbound-email";
+import { renderInboxPage } from "./inbox-page";
 import { BROADCAST_API, handleBroadcastAdmin, handleBroadcastWebhook, type BroadcastBindings } from "./broadcasts";
 import { handleBroadcastPublic } from "./broadcast-public";
 import { renderBroadcastAdminPage } from "./broadcast-admin-page";
@@ -115,7 +117,7 @@ export function configuredCorsOrigins(env: Bindings): Set<string> {
 
 export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
   return async (request, rawEnv, ctx) => {
-    const env = rawEnv as CalendarBindings & ContactBindings & SignupBindings;
+    const env = rawEnv as CalendarBindings & ContactBindings & SignupBindings & InboundBindings;
     const url = new URL(request.url);
     const { pathname } = url;
 
@@ -151,6 +153,48 @@ export function createCmsRequestHandler(appFetch: CmsAppFetch): CmsAppFetch {
           "Content-Type": jsonContentType,
         },
       });
+    }
+
+    if (pathname === "/api/inbound-webhook")
+      return handleInboundWebhook(request, env as InboundBindings);
+    if (
+      pathname === "/admin/inbox" ||
+      pathname === INBOX_API ||
+      pathname.startsWith(INBOX_API + "/")
+    ) {
+      const page = pathname === "/admin/inbox";
+      const user = await authenticate(request, env);
+      if (!user)
+        return page
+          ? Response.redirect(
+              `${url.origin}/auth/login?returnTo=${encodeURIComponent(pathname + url.search)}`,
+              302,
+            )
+          : errorResponse(401, "unauthorized", "Sign in required.");
+      if (!(await hasPermission(env, user, "inbox.manage")))
+        return errorResponse(
+          403,
+          "forbidden",
+          "The inbox.manage permission is required.",
+        );
+      if (page) {
+        if (request.method !== "GET")
+          return errorResponse(
+            405,
+            "method_not_allowed",
+            "Method not allowed.",
+          );
+        const csrf = await ensureCsrfToken(request, env);
+        if (csrf instanceof Response) return csrf;
+        const response = htmlResponse(renderInboxPage(csrf.token));
+        response.headers.append("Set-Cookie", csrf.cookie);
+        return response;
+      }
+      if (request.method !== "GET") {
+        const error = await validateMutationCsrf(request, env);
+        if (error) return error;
+      }
+      return handleInboxAdmin(request, env as InboundBindings, user.userId);
     }
 
     if (pathname === "/api/broadcast-webhook") return handleBroadcastWebhook(request, env as BroadcastBindings);

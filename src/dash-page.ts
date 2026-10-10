@@ -48,6 +48,7 @@ ${renderAdminHeader("dash")}
     <p>Manage parent inquiries, calendar events, and site content from one place.</p>
   </div>
   <div class="cards">
+    <a class="card" href="/admin/inbox"><div class="card__icon card__icon--blue">&#9993;</div><h2>Incoming email</h2><p>Review messages sent to Pack addresses, download attachments, and view contact email history.</p><span class="badge">Inbox</span></a>
     <a class="card" href="/admin/broadcasts"><div class="card__icon card__icon--blue">&#9993;</div><h2>Email broadcasts</h2><p>Manage mailing lists and subscribers, draft Pack updates, and view delivery statistics.</p><span class="badge">Lists and email</span></a>
     <a class="card" href="/admin/contact-form">
       <div class="card__icon card__icon--blue">&#9993;</div>
