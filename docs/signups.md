@@ -206,6 +206,11 @@ See [Postmark's per-email tracking documentation](https://postmarkapp.com/develo
 SonicJS volunteer invitations use the same Postmark transport and credentials,
 with their own `INVITE_FROM_EMAIL`, `INVITE_FROM_NAME`, and `INVITE_REPLY_TO` settings.
 
+When the signup's event has a **Payment URL** (see [calendar](calendar.md#payment-link)),
+the confirmation and resend emails add a "Pay for {event}" button and a plain
+link below the confirm-your-signup link, and the public form JSON returns it as
+`event.paymentUrl`. Events without one send the email unchanged.
+
 Deploy the nullable phone migration and compatibility code first. After the
 frontend phone field is live, set the preserved `SIGNUP_REQUIRE_PHONE` Worker
 secret to `true`; absent or any other value keeps compatibility mode enabled.

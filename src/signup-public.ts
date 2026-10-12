@@ -6,6 +6,7 @@ import {
   findResponseIdByEmail,
   getPublicSignupForm,
   getResponseByTokenHash,
+  getSignupEventPayment,
   getSignupFormBySlug,
   rotateResponseToken,
   updateSignupResponse,
@@ -377,6 +378,8 @@ async function handleSubmission(
     }
   }
 
+  const payment = await getSignupEventPayment(env, form.eventId);
+
   try {
     await sendSignupLinkEmail(
       env,
@@ -386,6 +389,7 @@ async function handleSubmission(
         formTitle: form.title,
         linkUrl: signupLinkUrl(env, signupToken),
         closesAt: form.closesAt,
+        payment,
       },
       fetchImpl,
     );

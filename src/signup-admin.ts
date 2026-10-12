@@ -3,6 +3,7 @@ import { sendSignupLinkEmail, signupLinkUrl } from "./signup-email";
 import {
   createSignupForm,
   deleteSignupResponse,
+  getSignupEventPayment,
   getSignupFormById,
   listSignupForms,
   listSignupResponses,
@@ -195,6 +196,10 @@ export async function handleAdminSignupRequest(
         if (!form) {
           throw new SignupRequestError(404, "not_found", "Signup not found.");
         }
+        // Resolve the payment link before rotating the token: a failed lookup
+        // after rotation would invalidate the family's old link without sending
+        // a new one.
+        const payment = await getSignupEventPayment(env, form.eventId);
         const { token, tokenHash } = await issueSignupToken();
         // The response can be deleted between the lookup above and this write.
         // Sending the email anyway would report a resend that can never work.
@@ -209,6 +214,7 @@ export async function handleAdminSignupRequest(
             formTitle: form.title,
             linkUrl: signupLinkUrl(env, token),
             closesAt: form.closesAt,
+            payment,
           },
           fetchImpl,
         );

@@ -121,6 +121,7 @@ function adminDb(options: {
   form?: Record<string, unknown> | null;
   response?: Record<string, unknown> | null;
   changes?: number;
+  event?: Record<string, unknown> | null;
   batch?: ReturnType<typeof vi.fn>;
 } = {}) {
   const form = options.form === undefined ? formRow : options.form;
@@ -143,6 +144,7 @@ function adminDb(options: {
         first: async () => {
           if (sql.includes("FROM signup_forms")) return form;
           if (sql.includes("FROM signup_responses")) return responseValue;
+          if (sql.includes("FROM calendar_events")) return options.event ?? null;
           return null;
         },
         all: async () => ({
@@ -316,6 +318,25 @@ describe("signup admin API", () => {
     expect(JSON.parse(send.mock.calls[0][1].body).To).toBe(
       "parent@example.com",
     );
+  });
+
+  it("includes the event payment link when a volunteer resends", async () => {
+    const { db } = adminDb({
+      event: { title: "Fall Campout", payment_url: "https://buy.stripe.com/x" },
+    });
+    const send = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ErrorCode: 0, MessageID: "message-test", Message: "OK", To: "parent@example.com", SubmittedAt: "2026-10-07T22:00:00Z" })));
+    const response = await handleAdminSignupRequest(
+      adminRequest("/responses/rsp-1/resend", { method: "POST" }),
+      adminEnv(db),
+      user,
+      null,
+      true,
+      send,
+    );
+    expect(response.status).toBe(200);
+    const message = JSON.parse(send.mock.calls[0][1].body);
+    expect(message.TextBody).toContain("Pay for Fall Campout:");
+    expect(message.HtmlBody).toContain('href="https://buy.stripe.com/x"');
   });
 
   it("404s a resend for a response that vanished before the rotation landed", async () => {

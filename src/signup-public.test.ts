@@ -40,6 +40,7 @@ const slotRow = {
 function stubDb(options: {
   form?: Record<string, unknown> | null;
   existingResponseId?: string | null;
+  event?: Record<string, unknown> | null;
   batch?: ReturnType<typeof vi.fn>;
 } = {}) {
   const form = options.form === undefined ? openFormRow : options.form;
@@ -64,6 +65,7 @@ function stubDb(options: {
             ? { id: options.existingResponseId }
             : null;
         }
+        if (sql.includes("FROM calendar_events")) return options.event ?? null;
         return null;
       },
       all: async () => ({
@@ -462,6 +464,41 @@ describe("public signup routing", () => {
     expect(provider).toHaveBeenCalledTimes(2);
     const message = JSON.parse(String(provider.mock.calls[1]?.[1]?.body));
     expect(message.To).toBe("parent@example.com");
+  });
+
+  it("adds the event payment link to the confirmation email", async () => {
+    const env = baseEnv({
+      DB: stubDb({
+        event: { title: "Fall Campout", payment_url: "https://buy.stripe.com/x" },
+      }),
+    });
+    const provider = vi.fn((url: string | URL | Request, _init?: RequestInit) =>
+      String(url).includes("challenges.cloudflare.com")
+        ? turnstileOk()
+        : Promise.resolve(Response.json({ ErrorCode: 0, MessageID: "message-test", Message: "OK", To: "parent@example.com", SubmittedAt: "2026-10-07T22:00:00Z" })),
+    );
+    const response = await handlePublicSignupRequest(
+      submit(validSubmission),
+      env,
+      provider,
+    );
+    expect(response.status).toBe(201);
+    const message = JSON.parse(String(provider.mock.calls[1]?.[1]?.body));
+    expect(message.TextBody).toContain("Pay for Fall Campout:");
+    expect(message.TextBody).toContain("https://buy.stripe.com/x");
+    expect(message.HtmlBody).toContain('href="https://buy.stripe.com/x"');
+  });
+
+  it("sends no payment block when the event has no payment link", async () => {
+    const provider = vi.fn((url: string | URL | Request, _init?: RequestInit) =>
+      String(url).includes("challenges.cloudflare.com")
+        ? turnstileOk()
+        : Promise.resolve(Response.json({ ErrorCode: 0, MessageID: "message-test", Message: "OK", To: "parent@example.com", SubmittedAt: "2026-10-07T22:00:00Z" })),
+    );
+    await handlePublicSignupRequest(submit(validSubmission), baseEnv(), provider);
+    const message = JSON.parse(String(provider.mock.calls[1]?.[1]?.body));
+    expect(message.TextBody).not.toContain("Pay for");
+    expect(message.HtmlBody).not.toContain("Pay for");
   });
 
   it("resends the link for an email that already responded, without a second row", async () => {
