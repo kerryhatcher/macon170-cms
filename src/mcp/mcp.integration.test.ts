@@ -506,6 +506,35 @@ describe("ChatGPT OAuth and MCP", () => {
         .get()!.n,
     ).toBe(1);
   });
+  it("stores a payment link, keeps it across a partial update, and rejects http", async () => {
+    const a = await connect();
+    const paymentUrl = "https://buy.stripe.com/9B68wOdMpef0c9rfKpdjO00";
+    const created = await tool(a.access_token, "create_calendar_event", {
+      ...event,
+      slug: "fall-campout-payment",
+      paymentUrl,
+    });
+    expect(created.isError).toBe(false);
+    const row = JSON.parse(created.content[0]!.text).data.event;
+    expect(row.paymentUrl).toBe(paymentUrl);
+
+    const updated = await tool(a.access_token, "update_calendar_event", {
+      id: row.id,
+      expectedRevision: row.revision,
+      changes: { title: "Fall Campout 2026" },
+    });
+    expect(updated.isError).toBe(false);
+    expect(JSON.parse(updated.content[0]!.text).data.event.paymentUrl).toBe(
+      paymentUrl,
+    );
+
+    const rejected = await tool(a.access_token, "create_calendar_event", {
+      ...event,
+      slug: "fall-campout-http",
+      paymentUrl: "http://buy.stripe.com/x",
+    });
+    expect(rejected.isError).toBe(true);
+  });
   it("creates drafts and queues broadcasts through existing consent and suppression rules without sending during the request", async () => {
     const a = await connect();
     expect(

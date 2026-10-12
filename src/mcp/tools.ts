@@ -35,6 +35,7 @@ const event = z
     whatToBring: optionalText,
     cost: optionalText,
     registrationUrl: optionalText,
+    paymentUrl: optionalText,
     milestone: z
       .enum(["lego-derby", "fall-camp", "pinewood-derby", "blue-gold"])
       .nullable()
