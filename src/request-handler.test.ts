@@ -336,6 +336,7 @@ describe('CMS request guard', () => {
       what_to_bring: null,
       cost: null,
       registration_url: null,
+      payment_url: null,
       milestone: null,
       created_at: 1_800_000_000_000,
       updated_at: 1_800_000_100_000,
