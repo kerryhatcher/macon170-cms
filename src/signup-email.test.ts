@@ -51,6 +51,30 @@ describe("signup email rendering", () => {
       renderSignupEmail({ ...options, closesAt: null }).text,
     ).not.toMatch(/Sign up by/);
   });
+
+  it("adds a payment link only when the event has one", () => {
+    const without = renderSignupEmail(options);
+    expect(without.text).not.toContain("Pay for");
+    expect(without.html).not.toContain("Pay for");
+
+    const payment = {
+      eventTitle: "Fall <Campout>",
+      url: "https://buy.stripe.com/9B68wOdMpef0c9rfKpdjO00?x=1&y=2",
+    };
+    const withPayment = renderSignupEmail({ ...options, payment });
+    expect(withPayment.subject).toBe(without.subject);
+    expect(withPayment.text).toContain("Pay for Fall <Campout>:");
+    expect(withPayment.text).toContain(payment.url);
+    expect(withPayment.html).toContain("Pay for Fall &lt;Campout&gt;");
+    expect(withPayment.html).toContain("x=1&amp;y=2");
+    expect(withPayment.html).not.toContain("Fall <Campout>");
+    expect(withPayment.text.indexOf(options.linkUrl)).toBeLessThan(
+      withPayment.text.indexOf(payment.url),
+    );
+    expect(withPayment.html.indexOf(options.linkUrl)).toBeLessThan(
+      withPayment.html.indexOf(payment.url.replace("&", "&amp;")),
+    );
+  });
 });
 
 describe("signup email delivery", () => {
