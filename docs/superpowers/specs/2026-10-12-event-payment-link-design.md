@@ -36,26 +36,29 @@ signup link.
 - **Admin editor** (`src/calendar-admin-page.ts`): add a "Payment URL"
   `type="url"` input beside "Registration URL" and carry it in the save payload.
 - **MCP tools** (`src/mcp/tools.ts`): accept `paymentUrl` wherever
-  `registrationUrl` is accepted, so the ChatGPT/MCP plugin can set it. Update
-  `plugins/macon170/skills/manage-pack/SKILL.md` if it lists event fields.
+  `registrationUrl` is accepted, so the ChatGPT/MCP plugin can set it. The
+  manage-pack SKILL does not list event fields, so it needs no change.
 - **Public signup projection** (`src/signup-store.ts`, `getPublicSignupForm`):
   select `calendar_events.payment_url` and return it as `event.paymentUrl`
   (`string | null`) alongside the existing `slug`, `title`, `startsAt`. Update
   the `PublicSignupForm` type in `src/signups.ts`.
-- **Email** (`src/signup-email.ts`): add optional `paymentUrl` and `eventTitle`
-  to `SignupEmailOptions`. When `paymentUrl` is set, the text body gets a line
-  with the link and the HTML body gets a "Pay for {event}" button. Output is
-  unchanged when it is null. The three call sites that build these options
-  (`src/signup-public.ts:386`, `src/signup-admin.ts:209`,
-  `src/signup-store.ts:586`) read the event's `payment_url` and event title.
-  The HTML escapes both values like the existing fields.
-- **Docs**: `docs/calendar.md` documents the field. `docs/signups.md` notes the
-  payment line in the confirmation email.
+- **Email** (`src/signup-email.ts`): add an optional
+  `payment: { eventTitle: string; url: string } | null` to `SignupEmailOptions`.
+  When it is set, the text body gets a line with the link and the HTML body
+  gets a "Pay for {event}" button. Output is unchanged when it is null. A new
+  store lookup, `getSignupEventPayment(env, eventId)` in `src/signup-store.ts`,
+  returns that object (or null when the event has no payment URL). The two
+  call sites that send the email (`src/signup-public.ts` on submit and
+  `src/signup-admin.ts` on resend) call it with the form's `eventId`. The HTML
+  escapes both values like the existing fields.
+- **Docs**: `docs/calendar.md` gets a short "Payment link" section.
+  `docs/signups.md` notes the payment line in the confirmation email.
 
 ### Frontend (`macon170.com`, after the CMS deploy)
 
 - `src/lib/calendar-client.ts`: parse `paymentUrl` with the existing
-  `nullableWebUrl` helper. Update the event type in `src/data/pack.ts`.
+  `nullableWebUrl` helper and add it to the `CalendarEvent` type. (`PackEvent`
+  in `src/data/pack.ts` is an unused placeholder and stays as is.)
 - `src/pages/events/index.astro`: render a separate "Pay now" button next to the
   registration action when `paymentUrl` is present. A link that fails
   `webUrl()` gets the same "could not be opened" treatment as registration. The
