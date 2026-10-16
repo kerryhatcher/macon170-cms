@@ -75,6 +75,63 @@ describe("signup email rendering", () => {
       withPayment.html.indexOf(payment.url.replace("&", "&amp;")),
     );
   });
+
+  it("puts the payment block after the deadline so it does not read as a payment deadline", () => {
+    const payment = {
+      eventTitle: "Fall Campout",
+      url: "https://buy.stripe.com/x",
+    };
+    const { text, html } = renderSignupEmail({ ...options, payment });
+    expect(text.indexOf(options.linkUrl)).toBeLessThan(
+      text.indexOf("Sign up by"),
+    );
+    expect(text.indexOf("Sign up by")).toBeLessThan(
+      text.indexOf("Pay for"),
+    );
+    expect(text.indexOf("Sign up by")).toBeLessThan(
+      text.indexOf(payment.url),
+    );
+    expect(html.indexOf(options.linkUrl)).toBeLessThan(
+      html.indexOf("Sign up by"),
+    );
+    expect(html.indexOf("Sign up by")).toBeLessThan(html.indexOf("Pay for"));
+    expect(html.indexOf("Sign up by")).toBeLessThan(
+      html.indexOf(payment.url),
+    );
+  });
+
+  it("still renders the payment block, after the confirm link, when there is no deadline", () => {
+    const payment = {
+      eventTitle: "Fall Campout",
+      url: "https://buy.stripe.com/x",
+    };
+    const { text, html } = renderSignupEmail({
+      ...options,
+      closesAt: null,
+      payment,
+    });
+    expect(text).not.toContain("Sign up by");
+    expect(text).toContain("Pay for Fall Campout:");
+    expect(text).toContain(payment.url);
+    expect(text.indexOf(options.linkUrl)).toBeLessThan(
+      text.indexOf("Pay for"),
+    );
+    expect(html).toContain("Pay for Fall Campout");
+    expect(html).toContain(`href="${payment.url}"`);
+    expect(html.indexOf(options.linkUrl)).toBeLessThan(
+      html.indexOf("Pay for"),
+    );
+  });
+
+  it("renders identically with payment null or omitted, and never shows a payment block", () => {
+    for (const closesAt of [options.closesAt, null]) {
+      const omitted = renderSignupEmail({ ...options, closesAt });
+      const nulled = renderSignupEmail({ ...options, closesAt, payment: null });
+      expect(nulled).toEqual(omitted);
+      expect(omitted.text).not.toContain("Pay for");
+      expect(omitted.html).not.toContain("Pay for");
+    }
+  });
 });
 
 describe("signup email delivery", () => {

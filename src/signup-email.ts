@@ -39,6 +39,8 @@ export function renderSignupEmail(options: SignupEmailOptions): {
     ? deadlineFormat.format(new Date(options.closesAt))
     : null;
   const deadlineLine = deadline ? `Sign up by ${deadline}.` : "";
+  // The payment block follows the deadline line so "Sign up by ..." cannot be
+  // read as a payment deadline.
   const paymentText = options.payment
     ? ["", `Pay for ${options.payment.eventTitle}:`, options.payment.url]
     : [];
@@ -52,8 +54,8 @@ export function renderSignupEmail(options: SignupEmailOptions): {
     options.linkUrl,
     "",
     "Keep the link. It is the only way to update your response.",
-    ...paymentText,
     deadlineLine,
+    ...paymentText,
     "",
     "Pack 170",
   ]
@@ -71,9 +73,9 @@ export function renderSignupEmail(options: SignupEmailOptions): {
         <h1 style="color:#003f87;font-family:Montserrat,Arial,sans-serif;font-size:30px;line-height:1.2">Confirm your signup</h1>
         <p style="font-size:17px;line-height:1.55">Thanks for signing up for ${escapeHtml(options.formTitle)}.</p>
         <p style="margin:28px 0"><a href="${escapeHtml(options.linkUrl)}" style="display:inline-block;background:#003f87;color:#fff;font-weight:700;padding:14px 20px;text-decoration:none;border-radius:9px 9px 3px 9px">Confirm or edit your signup</a></p>
-        <p style="font-size:17px;line-height:1.55">Keep this link. It is the only way to update your response.</p>${options.payment ? `
+        <p style="font-size:17px;line-height:1.55">Keep this link. It is the only way to update your response.</p>
+        ${deadline ? `<p style="font-size:17px;line-height:1.55">Sign up by ${escapeHtml(deadline)}.</p>` : ""}${options.payment ? `
         <p style="margin:28px 0"><a href="${escapeHtml(options.payment.url)}" style="display:inline-block;background:#fcd116;color:#002b5c;font-weight:700;padding:14px 20px;text-decoration:none;border-radius:9px 9px 3px 9px">Pay for ${escapeHtml(options.payment.eventTitle)}</a></p>` : ""}
-        ${deadline ? `<p style="font-size:17px;line-height:1.55">Sign up by ${escapeHtml(deadline)}.</p>` : ""}
         <p style="font-size:17px;line-height:1.55">Pack 170</p>
       </td></tr>
     </table>
