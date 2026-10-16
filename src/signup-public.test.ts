@@ -41,6 +41,7 @@ function stubDb(options: {
   form?: Record<string, unknown> | null;
   existingResponseId?: string | null;
   event?: Record<string, unknown> | null;
+  eventLookupThrows?: boolean;
   batch?: ReturnType<typeof vi.fn>;
 } = {}) {
   const form = options.form === undefined ? openFormRow : options.form;
@@ -65,7 +66,10 @@ function stubDb(options: {
             ? { id: options.existingResponseId }
             : null;
         }
-        if (sql.includes("FROM calendar_events")) return options.event ?? null;
+        if (sql.includes("FROM calendar_events")) {
+          if (options.eventLookupThrows) throw new Error("D1 unavailable");
+          return options.event ?? null;
+        }
         return null;
       },
       all: async () => ({
@@ -488,6 +492,40 @@ describe("public signup routing", () => {
     expect(message.TextBody).toContain("https://buy.stripe.com/x");
     expect(message.HtmlBody).toContain('href="https://buy.stripe.com/x"');
   });
+
+  it.each([
+    ["a first submit", null],
+    ["a repeat submit that would rotate the token", "rsp-1"],
+  ])(
+    "aborts before any write when the payment lookup fails on %s",
+    async (_label, existingResponseId) => {
+      const batch = vi.fn();
+      const env = baseEnv({
+        DB: stubDb({ eventLookupThrows: true, existingResponseId, batch }),
+      });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const provider = vi.fn((url: string | URL | Request, _init?: RequestInit) =>
+        String(url).includes("challenges.cloudflare.com")
+          ? turnstileOk()
+          : Promise.resolve(Response.json({ ErrorCode: 0 })),
+      );
+      const response = await handlePublicSignupRequest(
+        submit(validSubmission),
+        env,
+        provider,
+      );
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "temporary" },
+      });
+      expect(batch).not.toHaveBeenCalled();
+      // Only the Turnstile verification ran; no email was attempted.
+      expect(provider).toHaveBeenCalledTimes(1);
+      expect(String(provider.mock.calls[0]?.[0])).toContain(
+        "challenges.cloudflare.com",
+      );
+    },
+  );
 
   it("sends no payment block when the event has no payment link", async () => {
     const provider = vi.fn((url: string | URL | Request, _init?: RequestInit) =>
