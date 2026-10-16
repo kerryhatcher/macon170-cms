@@ -534,6 +534,7 @@ describe("ChatGPT OAuth and MCP", () => {
       paymentUrl: "http://buy.stripe.com/x",
     });
     expect(rejected.isError).toBe(true);
+    expect(rejected.content[0]!.text).toContain("HTTPS");
   });
   it("creates drafts and queues broadcasts through existing consent and suppression rules without sending during the request", async () => {
     const a = await connect();
