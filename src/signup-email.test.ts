@@ -123,6 +123,18 @@ describe("signup email rendering", () => {
     );
   });
 
+  it("keeps the no-payment text body exactly as it was before payment links existed", () => {
+    // Captured from origin/main's renderer; guards against drift in the no-payment path.
+    const base =
+      "Hi Kerry & <Family>,\n\nThanks for signing up for Lego Derby food.\n\nUse this link to confirm your signup and to change it later:\nhttps://www.macon170.com/signups/edit/?token=abc\n\nKeep the link. It is the only way to update your response.\n";
+    expect(renderSignupEmail(options).text).toBe(
+      `${base}Sign up by February 28, 2027.\n\nPack 170`,
+    );
+    expect(renderSignupEmail({ ...options, closesAt: null }).text).toBe(
+      `${base}\nPack 170`,
+    );
+  });
+
   it("renders identically with payment null or omitted, and never shows a payment block", () => {
     for (const closesAt of [options.closesAt, null]) {
       const omitted = renderSignupEmail({ ...options, closesAt });

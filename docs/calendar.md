@@ -32,7 +32,8 @@ public-site update, then check All-day on the Fall Campout and save it.
 
 An event can carry one optional **Payment URL**, such as a Stripe payment link.
 It must be an `https://` URL; `http://` and other schemes are rejected when the
-event is saved. It is separate from **Registration URL**, which is where
+event is saved, as is a link containing spaces or line breaks (the raw text is
+printed in the plain-text signup email). It is separate from **Registration URL**, which is where
 volunteers paste the signup form link. The JSON contract exposes it as
 `paymentUrl` (`null` when unset). Apply `0011_calendar_payment_url.sql` before
 deploying the CMS update, deploy the CMS before the public site, then paste the

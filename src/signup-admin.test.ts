@@ -122,6 +122,7 @@ function adminDb(options: {
   response?: Record<string, unknown> | null;
   changes?: number;
   event?: Record<string, unknown> | null;
+  eventLookupThrows?: boolean;
   batch?: ReturnType<typeof vi.fn>;
 } = {}) {
   const form = options.form === undefined ? formRow : options.form;
@@ -144,7 +145,10 @@ function adminDb(options: {
         first: async () => {
           if (sql.includes("FROM signup_forms")) return form;
           if (sql.includes("FROM signup_responses")) return responseValue;
-          if (sql.includes("FROM calendar_events")) return options.event ?? null;
+          if (sql.includes("FROM calendar_events")) {
+            if (options.eventLookupThrows) throw new Error("D1 unavailable");
+            return options.event ?? null;
+          }
           return null;
         },
         all: async () => ({
@@ -337,6 +341,25 @@ describe("signup admin API", () => {
     const message = JSON.parse(send.mock.calls[0][1].body);
     expect(message.TextBody).toContain("Pay for Fall Campout:");
     expect(message.HtmlBody).toContain('href="https://buy.stripe.com/x"');
+  });
+
+  it("does not rotate the token or send when the payment lookup fails on resend", async () => {
+    const { db, statements, batch } = adminDb({ eventLookupThrows: true });
+    const send = vi.fn();
+    const response = await handleAdminSignupRequest(
+      adminRequest("/responses/rsp-1/resend", { method: "POST" }),
+      adminEnv(db),
+      user,
+      null,
+      true,
+      send,
+    );
+    expect(response.status).toBeGreaterThanOrEqual(500);
+    expect(send).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
+    expect(
+      statements.some((sql) => sql.includes("UPDATE signup_responses SET token_hash")),
+    ).toBe(false);
   });
 
   it("404s a resend for a response that vanished before the rotation landed", async () => {

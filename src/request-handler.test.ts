@@ -336,7 +336,7 @@ describe('CMS request guard', () => {
       what_to_bring: null,
       cost: null,
       registration_url: null,
-      payment_url: null,
+      payment_url: 'https://buy.stripe.com/9B68wOdMpef0c9rfKpdjO00',
       milestone: null,
       created_at: 1_800_000_000_000,
       updated_at: 1_800_000_100_000,
@@ -368,6 +368,8 @@ describe('CMS request guard', () => {
         publicationState: 'published',
         eventStatus: 'scheduled',
         startsAt: row.starts_at,
+        registrationUrl: null,
+        paymentUrl: 'https://buy.stripe.com/9B68wOdMpef0c9rfKpdjO00',
       })],
     })
     expect(db.prepare).toHaveBeenCalledWith(expect.stringContaining(

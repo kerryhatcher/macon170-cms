@@ -196,6 +196,16 @@ export function validateCalendarInput(
     if (parsedPayment.protocol !== "https:") {
       throw new Error("Payment URL must use HTTPS");
     }
+    // The raw string is stored and printed in the plain-text email, so reject
+    // what the URL parser would silently normalize away (newlines, `https:host`).
+    if (
+      !/^https:\/\//i.test(paymentUrl) ||
+      /[\s\u0000-\u001f\u007f]/.test(paymentUrl)
+    ) {
+      throw new Error(
+        "Payment URL must be a plain https:// link with no spaces or line breaks",
+      );
+    }
   }
   const milestone = optional("milestone", 80) as CalendarMilestone | null;
   if (milestone && !milestones.has(milestone)) {

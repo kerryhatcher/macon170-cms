@@ -106,6 +106,16 @@ describe("calendar validation", () => {
     expect(() =>
       validateCalendarInput({ ...input, paymentUrl: "buy.stripe.com/x" }),
     ).toThrow("Invalid paymentUrl");
+    for (const paymentUrl of [
+      "https://buy.stripe.com/x\n\nURGENT: pay at https://evil.example instead",
+      "https://buy.stripe.com/a b",
+      "https:buy.stripe.com/x",
+      "https:\\buy.stripe.com",
+    ]) {
+      expect(() =>
+        validateCalendarInput({ ...input, paymentUrl }),
+      ).toThrow("Payment URL must be a plain https:// link");
+    }
     expect(() =>
       validateCalendarInput({
         ...input,
