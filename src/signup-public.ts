@@ -6,6 +6,7 @@ import {
   findResponseIdByEmail,
   getPublicSignupForm,
   getResponseByTokenHash,
+  getSignupEventPayment,
   getSignupFormBySlug,
   rotateResponseToken,
   updateSignupResponse,
@@ -329,6 +330,12 @@ async function handleSubmission(
 
   await verifyTurnstile(token, request, env, fetchImpl);
 
+  // Looked up before anything is written. A failure here must abort the
+  // request while the response row and any existing emailed link are still
+  // untouched; after the write it would leave a saved row (or a rotated,
+  // never-delivered token) and no email. Deliberately not fail-soft.
+  const payment = await getSignupEventPayment(env, form.eventId);
+
   const ipHash = await hashSignupToken(
     request.headers.get("CF-Connecting-IP") ?? "unknown",
   );
@@ -386,6 +393,7 @@ async function handleSubmission(
         formTitle: form.title,
         linkUrl: signupLinkUrl(env, signupToken),
         closesAt: form.closesAt,
+        payment,
       },
       fetchImpl,
     );

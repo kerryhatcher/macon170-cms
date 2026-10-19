@@ -30,6 +30,7 @@ export type CalendarEvent = {
   whatToBring: string | null;
   cost: string | null;
   registrationUrl: string | null;
+  paymentUrl: string | null;
   milestone: CalendarMilestone | null;
   createdAt: string;
   updatedAt: string;
@@ -72,6 +73,7 @@ type CalendarRow = {
   what_to_bring: string | null;
   cost: string | null;
   registration_url: string | null;
+  payment_url: string | null;
   milestone: CalendarMilestone | null;
   created_at: number;
   updated_at: number;
@@ -183,6 +185,28 @@ export function validateCalendarInput(
       throw new Error("Registration URL must use HTTP or HTTPS");
     }
   }
+  const paymentUrl = optional("paymentUrl", 2000);
+  if (paymentUrl) {
+    let parsedPayment: URL;
+    try {
+      parsedPayment = new URL(paymentUrl);
+    } catch {
+      throw new Error("Invalid paymentUrl");
+    }
+    if (parsedPayment.protocol !== "https:") {
+      throw new Error("Payment URL must use HTTPS");
+    }
+    // The raw string is stored and printed in the plain-text email, so reject
+    // what the URL parser would silently normalize away (newlines, `https:host`).
+    if (
+      !/^https:\/\//i.test(paymentUrl) ||
+      /[\s\u0000-\u001f\u007f]/.test(paymentUrl)
+    ) {
+      throw new Error(
+        "Payment URL must be a plain https:// link with no spaces or line breaks",
+      );
+    }
+  }
   const milestone = optional("milestone", 80) as CalendarMilestone | null;
   if (milestone && !milestones.has(milestone)) {
     throw new Error("Invalid milestone");
@@ -205,6 +229,7 @@ export function validateCalendarInput(
     whatToBring: optional("whatToBring", 2000),
     cost: optional("cost", 500),
     registrationUrl,
+    paymentUrl,
     milestone,
   };
 }
@@ -230,6 +255,7 @@ export function rowToEvent(row: CalendarRow): CalendarEvent {
     whatToBring: row.what_to_bring,
     cost: row.cost,
     registrationUrl: row.registration_url,
+    paymentUrl: row.payment_url,
     milestone: row.milestone,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
@@ -243,7 +269,7 @@ export function rowToEvent(row: CalendarRow): CalendarEvent {
 const selectColumns = `
   id, revision, slug, publication_state, event_status, category, title,
   summary, description, starts_at, ends_at, timezone, location_name, address,
-  audience, what_to_bring, cost, registration_url, milestone, created_at,
+  audience, what_to_bring, cost, registration_url, payment_url, milestone, created_at,
   updated_at, published_at, all_day
 `;
 
@@ -304,9 +330,9 @@ export async function createCalendarEvent(
         `INSERT INTO calendar_events (
           id, revision, slug, publication_state, event_status, category, title,
           summary, description, starts_at, ends_at, timezone, location_name,
-          address, audience, what_to_bring, cost, registration_url, milestone,
-          created_at, updated_at, published_at, all_day
-        ) VALUES (?, 0, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+          address, audience, what_to_bring, cost, registration_url, payment_url,
+          milestone, created_at, updated_at, published_at, all_day
+        ) VALUES (?, 0, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
       ).bind(
         id,
         input.slug,
@@ -324,6 +350,7 @@ export async function createCalendarEvent(
         input.whatToBring,
         input.cost,
         input.registrationUrl,
+        input.paymentUrl,
         input.milestone,
         now,
         now,
@@ -431,7 +458,7 @@ async function mutateCalendarEvent(
           revision = ?, slug = ?, publication_state = ?, event_status = ?,
           category = ?, title = ?, summary = ?, description = ?, starts_at = ?,
           ends_at = ?, timezone = ?, location_name = ?, address = ?, audience = ?,
-          what_to_bring = ?, cost = ?, registration_url = ?, milestone = ?,
+          what_to_bring = ?, cost = ?, registration_url = ?, payment_url = ?, milestone = ?,
           updated_at = ?, published_at = ?, all_day = ?
          WHERE id = ? AND revision = ?`,
       ).bind(
@@ -452,6 +479,7 @@ async function mutateCalendarEvent(
         nextInput.whatToBring,
         nextInput.cost,
         nextInput.registrationUrl,
+        nextInput.paymentUrl,
         nextInput.milestone,
         now,
         publishedAt,

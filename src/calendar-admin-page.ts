@@ -85,6 +85,7 @@ ${renderAdminHeader("calendar")}
             <label class="wide">What to bring<textarea name="whatToBring" maxlength="2000"></textarea></label>
             <label>Cost<input name="cost" maxlength="500"></label>
             <label>Registration URL<input name="registrationUrl" type="url" maxlength="2000"></label>
+            <label>Payment URL<input name="paymentUrl" type="url" maxlength="2000"></label>
             <label>Program milestone<select name="milestone"><option value="">None</option><option value="lego-derby">Lego Derby</option><option value="fall-camp">Fall Camp</option><option value="pinewood-derby">Pinewood Derby</option><option value="blue-gold">Blue and Gold</option></select></label>
           </div>
           <div class="actions">
@@ -156,7 +157,7 @@ ${renderAdminHeader("calendar")}
         summary: data.summary, description: data.description,
         locationName: data.locationName || null, address: data.address || null,
         audience: data.audience, whatToBring: data.whatToBring || null,
-        cost: data.cost || null, registrationUrl: data.registrationUrl || null,
+        cost: data.cost || null, registrationUrl: data.registrationUrl || null, paymentUrl: data.paymentUrl || null,
         milestone: data.milestone || null
       };
     };

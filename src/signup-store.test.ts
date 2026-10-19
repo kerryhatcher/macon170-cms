@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createSignupForm, getPublicSignupForm, updateSignupForm } from "./signup-store";
+import {
+  createSignupForm,
+  getPublicSignupForm,
+  getSignupEventPayment,
+  updateSignupForm,
+} from "./signup-store";
 import { SignupConflictError, SignupRequestError, validateSignupFormInput } from "./signups";
 import type { SignupBindings } from "./signups";
 
@@ -704,5 +709,78 @@ describe("event reference errors", () => {
     ).rejects.toBeInstanceOf(SignupRequestError);
     // Proof the rejection came from phase 1 rather than the batch.
     expect(batch).not.toHaveBeenCalled();
+  });
+});
+
+describe("public signup form payment link", () => {
+  function publicDb(eventPaymentUrl: string | null) {
+    return {
+      prepare: () => ({
+        bind() {
+          return this;
+        },
+        first: async () => ({
+          ...formRow,
+          event_slug: "fall-campout",
+          event_title: "Fall Campout",
+          event_starts_at: "2026-10-24T16:00:00.000Z",
+          event_payment_url: eventPaymentUrl,
+        }),
+        all: async () => ({ results: [] }),
+      }),
+    };
+  }
+
+  it("includes the event's payment URL", async () => {
+    const form = await getPublicSignupForm(
+      { DB: publicDb("https://buy.stripe.com/x") } as unknown as SignupBindings,
+      "lego-derby-food",
+    );
+    expect(form?.event.paymentUrl).toBe("https://buy.stripe.com/x");
+  });
+
+  it("reports null when the event has no payment URL", async () => {
+    const form = await getPublicSignupForm(
+      { DB: publicDb(null) } as unknown as SignupBindings,
+      "lego-derby-food",
+    );
+    expect(form?.event.paymentUrl).toBeNull();
+  });
+});
+
+describe("getSignupEventPayment", () => {
+  function eventDb(row: Record<string, unknown> | null) {
+    return {
+      prepare: (sql: string) => ({
+        sql,
+        values: [] as unknown[],
+        bind(...values: unknown[]) {
+          this.values = values;
+          return this;
+        },
+        first: async () => row,
+      }),
+    } as unknown as SignupBindings["DB"];
+  }
+
+  it("returns the event title and link when a payment URL is set", async () => {
+    await expect(
+      getSignupEventPayment(
+        { DB: eventDb({ title: "Fall Campout", payment_url: "https://buy.stripe.com/x" }) } as unknown as SignupBindings,
+        "evt-1",
+      ),
+    ).resolves.toEqual({ eventTitle: "Fall Campout", url: "https://buy.stripe.com/x" });
+  });
+
+  it("returns null when the event has no payment URL or does not exist", async () => {
+    await expect(
+      getSignupEventPayment(
+        { DB: eventDb({ title: "Fall Campout", payment_url: null }) } as unknown as SignupBindings,
+        "evt-1",
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      getSignupEventPayment({ DB: eventDb(null) } as unknown as SignupBindings, "evt-missing"),
+    ).resolves.toBeNull();
   });
 });

@@ -124,7 +124,12 @@ export type PublicSignupForm = {
   instructions: string;
   closed: boolean;
   closesAt: string | null;
-  event: { slug: string; title: string; startsAt: string };
+  event: {
+    slug: string;
+    title: string;
+    startsAt: string;
+    paymentUrl: string | null;
+  };
   slots: PublicSignupSlot[];
 };
 

@@ -27,6 +27,7 @@ const input = {
   whatToBring: null,
   cost: null,
   registrationUrl: null,
+  paymentUrl: null,
   milestone: null,
 };
 
@@ -70,6 +71,57 @@ describe("calendar validation", () => {
     expect(() =>
       validateCalendarInput({ ...input, milestone: "summer-camp" }),
     ).toThrow("milestone");
+  });
+
+  it("accepts an https payment URL and trims it", () => {
+    expect(
+      validateCalendarInput({
+        ...input,
+        paymentUrl: "  https://buy.stripe.com/9B68wOdMpef0c9rfKpdjO00  ",
+      }).paymentUrl,
+    ).toBe("https://buy.stripe.com/9B68wOdMpef0c9rfKpdjO00");
+  });
+
+  it("treats a missing, empty, or null payment URL as null", () => {
+    const { paymentUrl: _omitted, ...withoutPayment } = input;
+    expect(validateCalendarInput(withoutPayment).paymentUrl).toBeNull();
+    expect(
+      validateCalendarInput({ ...input, paymentUrl: "" }).paymentUrl,
+    ).toBeNull();
+    expect(
+      validateCalendarInput({ ...input, paymentUrl: null }).paymentUrl,
+    ).toBeNull();
+  });
+
+  it("rejects payment URLs that are not https, not URLs, or too long", () => {
+    for (const paymentUrl of [
+      "http://buy.stripe.com/x",
+      "javascript:alert(1)",
+      "ftp://example.com/x",
+    ]) {
+      expect(() =>
+        validateCalendarInput({ ...input, paymentUrl }),
+      ).toThrow("Payment URL must use HTTPS");
+    }
+    expect(() =>
+      validateCalendarInput({ ...input, paymentUrl: "buy.stripe.com/x" }),
+    ).toThrow("Invalid paymentUrl");
+    for (const paymentUrl of [
+      "https://buy.stripe.com/x\n\nURGENT: pay at https://evil.example instead",
+      "https://buy.stripe.com/a b",
+      "https:buy.stripe.com/x",
+      "https:\\buy.stripe.com",
+    ]) {
+      expect(() =>
+        validateCalendarInput({ ...input, paymentUrl }),
+      ).toThrow("Payment URL must be a plain https:// link");
+    }
+    expect(() =>
+      validateCalendarInput({
+        ...input,
+        paymentUrl: `https://example.com/${"a".repeat(2000)}`,
+      }),
+    ).toThrow("Invalid paymentUrl");
   });
 
   it("requires instants to include an explicit timezone", () => {
@@ -143,6 +195,7 @@ describe("calendar persistence", () => {
       what_to_bring: null,
       cost: null,
       registration_url: null,
+      payment_url: null,
       milestone: null,
       created_at: 1,
       updated_at: 1,
@@ -177,6 +230,98 @@ describe("calendar persistence", () => {
     expect(created.revision).toBe(0);
   });
 
+  const stripeLink = "https://buy.stripe.com/9B68wOdMpef0c9rfKpdjO00";
+
+  function rowFor(source: typeof event) {
+    return {
+      id: source.id,
+      revision: source.revision,
+      slug: source.slug,
+      publication_state: source.publicationState,
+      event_status: source.eventStatus,
+      category: source.category,
+      title: source.title,
+      summary: source.summary,
+      description: source.description,
+      starts_at: source.startsAt,
+      ends_at: source.endsAt,
+      all_day: source.allDay ? 1 : 0,
+      timezone: source.timezone,
+      location_name: source.locationName,
+      address: source.address,
+      audience: source.audience,
+      what_to_bring: source.whatToBring,
+      cost: source.cost,
+      registration_url: source.registrationUrl,
+      payment_url: source.paymentUrl,
+      milestone: source.milestone,
+      created_at: Date.parse(source.createdAt),
+      updated_at: Date.parse(source.updatedAt),
+      published_at: Date.parse(source.publishedAt),
+    };
+  }
+
+  function capturingDb(row: ReturnType<typeof rowFor>) {
+    const statements: Array<{ sql: string; values: unknown[] }> = [];
+    const db = {
+      prepare: (sql: string) => ({
+        sql,
+        values: [] as unknown[],
+        bind(...values: unknown[]) {
+          this.values = values;
+          statements.push(this);
+          return this;
+        },
+        first: async () => row,
+      }),
+      batch: vi.fn().mockResolvedValue([{ meta: { changes: 1 } }, {}]),
+    };
+    return { db, statements };
+  }
+
+  it("writes payment_url on create with one bind per placeholder", async () => {
+    const { db, statements } = capturingDb(
+      rowFor({ ...event, paymentUrl: stripeLink }),
+    );
+    const created = await createCalendarEvent(
+      { DB: db } as unknown as Bindings,
+      validateCalendarInput({ ...input, paymentUrl: stripeLink }),
+      "admin-1",
+    );
+    const insert = statements.find((s) =>
+      s.sql.includes("INSERT INTO calendar_events"),
+    )!;
+    expect(insert.sql).toContain("payment_url");
+    expect(insert.values).toContain(stripeLink);
+    expect(insert.sql.match(/\?/g)).toHaveLength(insert.values.length);
+    const history = statements.find((s) =>
+      s.sql.includes("INSERT INTO calendar_event_history"),
+    )!;
+    expect(JSON.parse(String(history.values[2])).paymentUrl).toBe(stripeLink);
+    expect(created.paymentUrl).toBe(stripeLink);
+  });
+
+  it("writes payment_url on update with one bind per placeholder", async () => {
+    const { db, statements } = capturingDb(rowFor(event));
+    await updateCalendarEvent(
+      { DB: db } as unknown as Bindings,
+      event.id,
+      validateCalendarInput({ ...input, paymentUrl: stripeLink }),
+      event.revision,
+      "admin-1",
+    );
+    const update = statements.find((s) =>
+      s.sql.includes("UPDATE calendar_events SET"),
+    )!;
+    expect(update.sql).toContain("payment_url = ?");
+    expect(update.values).toContain(stripeLink);
+    expect(update.sql.match(/\?/g)).toHaveLength(update.values.length);
+    const history = statements.find((s) =>
+      s.sql.includes("INSERT INTO calendar_event_history"),
+    )!;
+    expect(JSON.parse(String(history.values[4])).paymentUrl).toBe(stripeLink);
+  });
+
   it("reports optimistic conflicts without overwriting", async () => {
     const row = {
       id: event.id,
@@ -197,6 +342,7 @@ describe("calendar persistence", () => {
       what_to_bring: event.whatToBring,
       cost: event.cost,
       registration_url: event.registrationUrl,
+      payment_url: event.paymentUrl,
       milestone: event.milestone,
       created_at: Date.parse(event.createdAt),
       updated_at: Date.parse(event.updatedAt),
@@ -243,6 +389,7 @@ describe("calendar persistence", () => {
       what_to_bring: event.whatToBring,
       cost: event.cost,
       registration_url: event.registrationUrl,
+      payment_url: event.paymentUrl,
       milestone: event.milestone,
       created_at: Date.parse(event.createdAt),
       updated_at: Date.parse(event.updatedAt),

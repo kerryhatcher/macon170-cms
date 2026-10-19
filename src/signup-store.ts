@@ -205,7 +205,8 @@ export async function getPublicSignupForm(
     `SELECT ${qualifiedFormColumns},
             calendar_events.slug AS event_slug,
             calendar_events.title AS event_title,
-            calendar_events.starts_at AS event_starts_at
+            calendar_events.starts_at AS event_starts_at,
+            calendar_events.payment_url AS event_payment_url
      FROM signup_forms
      JOIN calendar_events ON calendar_events.id = signup_forms.event_id
      WHERE signup_forms.slug = ? AND signup_forms.state != 'draft'
@@ -217,6 +218,7 @@ export async function getPublicSignupForm(
         event_slug: string;
         event_title: string;
         event_starts_at: string;
+        event_payment_url: string | null;
       }
     >();
   if (!row) return null;
@@ -244,6 +246,7 @@ export async function getPublicSignupForm(
       slug: row.event_slug,
       title: row.event_title,
       startsAt: row.event_starts_at,
+      paymentUrl: row.event_payment_url ?? null,
     },
     slots: slots.results.map((slot) => ({
       id: slot.id,
@@ -257,6 +260,19 @@ export async function getPublicSignupForm(
       ),
     })),
   };
+}
+
+export async function getSignupEventPayment(
+  env: SignupBindings,
+  eventId: string,
+): Promise<{ eventTitle: string; url: string } | null> {
+  const row = await env.DB.prepare(
+    `SELECT title, payment_url FROM calendar_events WHERE id = ? LIMIT 1`,
+  )
+    .bind(eventId)
+    .first<{ title: string; payment_url: string | null }>();
+  if (!row?.payment_url) return null;
+  return { eventTitle: row.title, url: row.payment_url };
 }
 
 function insertSlotStatements(

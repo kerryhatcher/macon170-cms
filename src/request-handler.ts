@@ -889,7 +889,8 @@ async function handleAdminCalendarRequest(
         (error.message.startsWith("Invalid") ||
           error.message.startsWith("End date") ||
           error.message.startsWith("Pack 170") ||
-          error.message.startsWith("Registration URL")))
+          error.message.startsWith("Registration URL") ||
+          error.message.startsWith("Payment URL")))
     ) {
       return errorResponse(
         400,

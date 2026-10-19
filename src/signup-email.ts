@@ -6,6 +6,7 @@ export type SignupEmailOptions = {
   formTitle: string;
   linkUrl: string;
   closesAt: string | null;
+  payment?: { eventTitle: string; url: string } | null;
 };
 
 const deadlineFormat = new Intl.DateTimeFormat("en-US", {
@@ -38,6 +39,11 @@ export function renderSignupEmail(options: SignupEmailOptions): {
     ? deadlineFormat.format(new Date(options.closesAt))
     : null;
   const deadlineLine = deadline ? `Sign up by ${deadline}.` : "";
+  // The payment block follows the deadline line so "Sign up by ..." cannot be
+  // read as a payment deadline.
+  const paymentText = options.payment
+    ? ["", `Pay for ${options.payment.eventTitle}:`, options.payment.url]
+    : [];
 
   const text = [
     `Hi ${options.name},`,
@@ -49,6 +55,7 @@ export function renderSignupEmail(options: SignupEmailOptions): {
     "",
     "Keep the link. It is the only way to update your response.",
     deadlineLine,
+    ...paymentText,
     "",
     "Pack 170",
   ]
@@ -67,7 +74,8 @@ export function renderSignupEmail(options: SignupEmailOptions): {
         <p style="font-size:17px;line-height:1.55">Thanks for signing up for ${escapeHtml(options.formTitle)}.</p>
         <p style="margin:28px 0"><a href="${escapeHtml(options.linkUrl)}" style="display:inline-block;background:#003f87;color:#fff;font-weight:700;padding:14px 20px;text-decoration:none;border-radius:9px 9px 3px 9px">Confirm or edit your signup</a></p>
         <p style="font-size:17px;line-height:1.55">Keep this link. It is the only way to update your response.</p>
-        ${deadline ? `<p style="font-size:17px;line-height:1.55">Sign up by ${escapeHtml(deadline)}.</p>` : ""}
+        ${deadline ? `<p style="font-size:17px;line-height:1.55">Sign up by ${escapeHtml(deadline)}.</p>` : ""}${options.payment ? `
+        <p style="margin:28px 0"><a href="${escapeHtml(options.payment.url)}" style="display:inline-block;background:#fcd116;color:#002b5c;font-weight:700;padding:14px 20px;text-decoration:none;border-radius:9px 9px 3px 9px">Pay for ${escapeHtml(options.payment.eventTitle)}</a></p>` : ""}
         <p style="font-size:17px;line-height:1.55">Pack 170</p>
       </td></tr>
     </table>

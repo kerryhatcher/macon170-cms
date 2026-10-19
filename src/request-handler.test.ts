@@ -336,6 +336,7 @@ describe('CMS request guard', () => {
       what_to_bring: null,
       cost: null,
       registration_url: null,
+      payment_url: 'https://buy.stripe.com/9B68wOdMpef0c9rfKpdjO00',
       milestone: null,
       created_at: 1_800_000_000_000,
       updated_at: 1_800_000_100_000,
@@ -367,6 +368,8 @@ describe('CMS request guard', () => {
         publicationState: 'published',
         eventStatus: 'scheduled',
         startsAt: row.starts_at,
+        registrationUrl: null,
+        paymentUrl: 'https://buy.stripe.com/9B68wOdMpef0c9rfKpdjO00',
       })],
     })
     expect(db.prepare).toHaveBeenCalledWith(expect.stringContaining(
@@ -490,6 +493,51 @@ describe('CMS request guard', () => {
       error: { code: 'invalid_csrf', message: 'Security token rejected.' },
     })
 
+  })
+
+  it('rejects an http payment link with 400 invalid_request, not a 500 outage', async () => {
+    const secret = 'test-secret-that-is-not-used-in-production'
+    const token = await AuthManager.generateToken('admin-1', 'admin@example.test', 'admin', secret)
+    const csrfToken = await generateCsrfToken(secret)
+    const db = {
+      prepare: () => ({
+        bind() { return this },
+        first: async () => ({ id: 'admin-1' }),
+      }),
+      batch: vi.fn(),
+    }
+    const response = await createCmsRequestHandler(vi.fn())(
+      new Request('https://cms.macon170.com/api/calendar-admin/v1/events', {
+        method: 'POST',
+        headers: {
+          Cookie: `auth_token=${token}; csrf_token=${csrfToken}`,
+          Origin: 'https://cms.macon170.com',
+          'X-CSRF-Token': csrfToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          slug: 'fall-campout',
+          title: 'Fall Campout',
+          summary: 'A weekend campout.',
+          description: 'Bring a tent.',
+          category: 'pack',
+          eventStatus: 'scheduled',
+          startsAt: '2026-11-10T18:00:00-05:00',
+          endsAt: null,
+          allDay: false,
+          timezone: 'America/New_York',
+          audience: 'Pack families',
+          paymentUrl: 'http://buy.stripe.com/x',
+        }),
+      }),
+      cmsEnv(undefined, db),
+      executionContext,
+    )
+    expect(response.status).toBe(400)
+    const body = (await response.json()) as { error: { code: string; message: string } }
+    expect(body.error.code).toBe('invalid_request')
+    expect(body.error.message).toContain('HTTPS')
+    expect(db.batch).not.toHaveBeenCalled()
   })
 
   it('redirects the standalone SonicJS contact renderer to the branded page', async () => {

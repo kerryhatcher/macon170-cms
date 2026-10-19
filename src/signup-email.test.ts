@@ -51,6 +51,99 @@ describe("signup email rendering", () => {
       renderSignupEmail({ ...options, closesAt: null }).text,
     ).not.toMatch(/Sign up by/);
   });
+
+  it("adds a payment link only when the event has one", () => {
+    const without = renderSignupEmail(options);
+    expect(without.text).not.toContain("Pay for");
+    expect(without.html).not.toContain("Pay for");
+
+    const payment = {
+      eventTitle: "Fall <Campout>",
+      url: "https://buy.stripe.com/9B68wOdMpef0c9rfKpdjO00?x=1&y=2",
+    };
+    const withPayment = renderSignupEmail({ ...options, payment });
+    expect(withPayment.subject).toBe(without.subject);
+    expect(withPayment.text).toContain("Pay for Fall <Campout>:");
+    expect(withPayment.text).toContain(payment.url);
+    expect(withPayment.html).toContain("Pay for Fall &lt;Campout&gt;");
+    expect(withPayment.html).toContain("x=1&amp;y=2");
+    expect(withPayment.html).not.toContain("Fall <Campout>");
+    expect(withPayment.text.indexOf(options.linkUrl)).toBeLessThan(
+      withPayment.text.indexOf(payment.url),
+    );
+    expect(withPayment.html.indexOf(options.linkUrl)).toBeLessThan(
+      withPayment.html.indexOf(payment.url.replace("&", "&amp;")),
+    );
+  });
+
+  it("puts the payment block after the deadline so it does not read as a payment deadline", () => {
+    const payment = {
+      eventTitle: "Fall Campout",
+      url: "https://buy.stripe.com/x",
+    };
+    const { text, html } = renderSignupEmail({ ...options, payment });
+    expect(text.indexOf(options.linkUrl)).toBeLessThan(
+      text.indexOf("Sign up by"),
+    );
+    expect(text.indexOf("Sign up by")).toBeLessThan(
+      text.indexOf("Pay for"),
+    );
+    expect(text.indexOf("Sign up by")).toBeLessThan(
+      text.indexOf(payment.url),
+    );
+    expect(html.indexOf(options.linkUrl)).toBeLessThan(
+      html.indexOf("Sign up by"),
+    );
+    expect(html.indexOf("Sign up by")).toBeLessThan(html.indexOf("Pay for"));
+    expect(html.indexOf("Sign up by")).toBeLessThan(
+      html.indexOf(payment.url),
+    );
+  });
+
+  it("still renders the payment block, after the confirm link, when there is no deadline", () => {
+    const payment = {
+      eventTitle: "Fall Campout",
+      url: "https://buy.stripe.com/x",
+    };
+    const { text, html } = renderSignupEmail({
+      ...options,
+      closesAt: null,
+      payment,
+    });
+    expect(text).not.toContain("Sign up by");
+    expect(text).toContain("Pay for Fall Campout:");
+    expect(text).toContain(payment.url);
+    expect(text.indexOf(options.linkUrl)).toBeLessThan(
+      text.indexOf("Pay for"),
+    );
+    expect(html).toContain("Pay for Fall Campout");
+    expect(html).toContain(`href="${payment.url}"`);
+    expect(html.indexOf(options.linkUrl)).toBeLessThan(
+      html.indexOf("Pay for"),
+    );
+  });
+
+  it("keeps the no-payment text body exactly as it was before payment links existed", () => {
+    // Captured from origin/main's renderer; guards against drift in the no-payment path.
+    const base =
+      "Hi Kerry & <Family>,\n\nThanks for signing up for Lego Derby food.\n\nUse this link to confirm your signup and to change it later:\nhttps://www.macon170.com/signups/edit/?token=abc\n\nKeep the link. It is the only way to update your response.\n";
+    expect(renderSignupEmail(options).text).toBe(
+      `${base}Sign up by February 28, 2027.\n\nPack 170`,
+    );
+    expect(renderSignupEmail({ ...options, closesAt: null }).text).toBe(
+      `${base}\nPack 170`,
+    );
+  });
+
+  it("renders identically with payment null or omitted, and never shows a payment block", () => {
+    for (const closesAt of [options.closesAt, null]) {
+      const omitted = renderSignupEmail({ ...options, closesAt });
+      const nulled = renderSignupEmail({ ...options, closesAt, payment: null });
+      expect(nulled).toEqual(omitted);
+      expect(omitted.text).not.toContain("Pay for");
+      expect(omitted.html).not.toContain("Pay for");
+    }
+  });
 });
 
 describe("signup email delivery", () => {

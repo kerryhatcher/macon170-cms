@@ -33,6 +33,9 @@ it("stores and updates all-day events with immutable history against the migrate
     sqlite.exec(
       readFileSync("migrations/custom/0006_calendar_all_day.sql", "utf8"),
     );
+    sqlite.exec(
+      readFileSync("migrations/custom/0011_calendar_payment_url.sql", "utf8"),
+    );
     const DB = {
       prepare(sql: string) {
         const stmt = sqlite.prepare(sql);
